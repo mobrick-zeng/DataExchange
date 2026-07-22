@@ -47,7 +47,9 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      DOMAIN: ${DOMAIN:-localhost}
+      # 未設 DOMAIN → 綁 :80（接受任何 Host，含公網 IP，走 HTTP）；
+      # 設 DOMAIN=your.domain → Caddy 改綁該網域並自動申請 Let's Encrypt HTTPS
+      DOMAIN: ${DOMAIN:-:80}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
