@@ -2,7 +2,10 @@
  * 後端 API 客戶端。取代原本的 localStorage Mock：
  * 統一附上 JWT、處理 JSON 與錯誤。
  */
-const API_BASE = ((import.meta as any).env?.VITE_API_BASE as string) || 'http://localhost:4000'
+// VITE_API_BASE：未設定（dev）→ 預設打本機 4000；設為空字串（全棧打包）→ 同源 /api，交給 Caddy 代理。
+// 注意：務必用 ?? 而非 ||，否則空字串會被當 falsy 而誤掉回 localhost:4000（在遠端主機上會造成登入 Failed to fetch）。
+const envBase = (import.meta as any).env?.VITE_API_BASE as string | undefined
+const API_BASE = envBase ?? 'http://localhost:4000'
 const TOKEN_KEY = 'mediation-platform:token'
 
 export function getToken(): string | null {
