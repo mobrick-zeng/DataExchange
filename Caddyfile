@@ -1,7 +1,7 @@
 # 反向代理：/api/* 與 /health → 後端 api；其餘 → 前端靜態 web
-# 本機預設 DOMAIN=localhost（Caddy 以內部憑證提供 https://localhost）
-# 正式部署：設環境變數 DOMAIN=your.domain，Caddy 會自動申請 Let's Encrypt 憑證
-{$DOMAIN:localhost} {
+# 預設（未設 DOMAIN）：綁 :80，接受任何 Host（含公網 IP），走 HTTP —— 適用只有 IP 的情況
+# 正式部署：設環境變數 DOMAIN=your.domain，Caddy 會改綁該網域並自動申請 Let's Encrypt HTTPS 憑證
+{$DOMAIN::80} {
 	@api path /api/* /health
 	handle @api {
 		reverse_proxy api:4000
