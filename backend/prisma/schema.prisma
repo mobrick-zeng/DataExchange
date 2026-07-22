@@ -1,0 +1,455 @@
+// ============================================================================
+//  集中式金融資料交換平台 — 正式版資料庫 Schema
+//  資料庫：PostgreSQL 16    ORM：Prisma
+//  金額型別：Decimal(21, 4) — 整數最多 17 位、固定小數 4 位
+// ============================================================================
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+//  列舉（PostgreSQL 原生 enum）
+// ============================================================================
+
+enum BankType {
+  BANK
+  PLATFORM
+}
+
+enum Role {
+  ADMIN            // 平台管理員
+  BANK_STAFF       // 銀行人員：角色因案動態認定（建立案件者為最大債權行，可編輯；受邀者為其他債權行，僅檢視＋確認）
+  VIEWER           // 檢視者
+  PLATFORM_AUDITOR // 平台稽核檢視者
+}
+
+enum AccountStatus {
+  UNVERIFIED     // 未驗證 Email
+  PENDING_REVIEW // 已驗證／待審核
+  ACTIVE         // 已啟用
+  REJECTED       // 已駁回
+  SUSPENDED      // 已停用
+}
+
+// 案件為「持續推進」的還款過程，非一次性結案：
+enum CaseStatus {
+  DRAFT                // 建立中（最大債權行編輯、代填各行資料）
+  PENDING_CONFIRMATION // 已發布，待各其他債權行確認
+  IN_REPAYMENT         // 還款中（各行已確認，方案生效，每月更新，停留最久）
+  SETTLED              // 已結清（債務清償完畢）
+  TERMINATED           // 毀諾／終止（債務人違約、還款方案中斷）
+}
+
+// 其他債權行收到案件後的「確認 / 異議」狀態
+enum ParticipantConfirmationStatus {
+  NOT_REQUIRED // 最大債權行本身，無需確認
+  PENDING      // 待該債權行確認
+  CONFIRMED    // 已確認收到且無誤
+  DISPUTED     // 已回報異議，待最大債權行修正後重新確認
+}
+
+enum CaseBankRole {
+  MAIN
+  CO_BANK
+}
+
+enum ClaimType {
+  CREDIT_LOAN
+  CREDIT_CARD
+  GUARANTEE
+  OTHER
+}
+
+enum OtpPurpose {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+enum ApprovalAction {
+  SYSTEM_BOOTSTRAP
+  SUBMIT
+  EMAIL_VERIFIED
+  APPROVE
+  REJECT
+  RESUBMIT
+  ROLE_ASSIGN
+  BANK_CHANGE
+  SUSPEND
+  REACTIVATE
+}
+
+enum AuditActionType {
+  LOGIN_SUCCESS
+  LOGIN_FAILED
+  LOGOUT
+  REGISTER_SUBMIT
+  OTP_REQUESTED
+  OTP_VERIFIED
+  OTP_VERIFY_FAILED
+  ACCOUNT_APPROVED
+  ACCOUNT_REJECTED
+  ACCOUNT_SUSPENDED
+  ACCOUNT_REACTIVATED
+  ROLE_ASSIGNED
+  BANK_CHANGED
+  CREATE_CASE
+  UPDATE_CASE
+  PUBLISH_CASE
+  INVITE_BANK
+  CONFIRM_CASE_RECEIPT
+  DISPUTE_CASE
+  RECORD_REPAYMENT
+  SETTLE_CASE
+  TERMINATE_CASE
+  VIEW_INTERNAL_TOTAL
+  PASSWORD_RESET_SUCCESS
+  CREATE_INVITATION
+  REVOKE_INVITATION
+  ACCEPT_INVITATION
+  REQUEST_PASSWORD_RESET
+  ISSUE_PASSWORD_RESET
+  ACCOUNT_LOCKED
+  ACCOUNT_UNLOCKED
+}
+
+enum InvitationStatus {
+  PENDING  // 待使用
+  ACCEPTED // 已完成註冊
+  REVOKED  // 已撤銷
+}
+
+enum InvitationPurpose {
+  NEW_ACCOUNT    // 建立新帳號
+  PASSWORD_RESET // 重設既有帳號密碼
+}
+
+enum ResetRequestStatus {
+  PENDING  // 待管理員處理
+  RESOLVED // 已核發重置碼
+}
+
+enum NotificationType {
+  ACCOUNT_PENDING_REVIEW
+  ACCOUNT_APPROVED
+  ACCOUNT_REJECTED
+  CASE_INVITATION
+  CONFIRMATION_DEADLINE_REMINDER
+  CASE_CONFIRMED_BY_BANK
+  CASE_DISPUTED_BY_BANK
+  ALL_BANKS_CONFIRMED
+  REPAYMENT_UPDATE_DUE
+  REPAYMENT_UPDATED
+  CASE_SETTLED
+  CASE_TERMINATED
+}
+
+// ============================================================================
+//  資料表
+// ============================================================================
+
+/// banks 銀行／機構主檔
+model Bank {
+  bankCode String   @id
+  bankName String
+  type     BankType
+
+  usersApplied     User[]                @relation("UserAppliedBank")
+  usersApproved    User[]                @relation("UserApprovedBank")
+  casesAsMain      Case[]                @relation("CaseMainBank")
+  participantOf    CaseParticipantBank[]
+  declarations     CreditorDeclaration[]
+  auditLogs        AuditLog[]
+  repaymentRecords RepaymentRecord[]
+  invitations      Invitation[]
+
+  @@map("banks")
+}
+
+/// users 使用者
+model User {
+  userId          String        @id @default(cuid())
+  name            String
+  email           String        @unique
+  passwordHash    String
+  department      String?
+  title           String?
+  appliedBankCode  String
+  approvedBankCode String?
+  role            Role?
+  accountStatus   AccountStatus @default(UNVERIFIED)
+  emailVerifiedAt DateTime?
+  lastLoginAt     DateTime?
+  failedLoginCount Int          @default(0) // 連續登入失敗次數（達門檻鎖定）
+  lockedUntil      DateTime?                // 鎖定到期時間；null 表示未鎖定
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  appliedBank  Bank  @relation("UserAppliedBank", fields: [appliedBankCode], references: [bankCode])
+  approvedBank Bank? @relation("UserApprovedBank", fields: [approvedBankCode], references: [bankCode])
+
+  otps                     EmailOtp[]
+  approvalLogsAsSubject    AccountApprovalLog[]  @relation("ApprovalSubject")
+  approvalLogsPerformed    AccountApprovalLog[]  @relation("ApprovalPerformer")
+  createdCases             Case[]                @relation("CaseCreatedBy")
+  auditLogs                AuditLog[]
+  notifications            Notification[]
+  participantConfirmations CaseParticipantBank[] @relation("ParticipantConfirmedBy")
+  recordedRepayments       RepaymentRecord[]     @relation("RepaymentRecordedBy")
+  createdInvitations       Invitation[]          @relation("InvitationCreatedBy")
+  passwordResetRequests    PasswordResetRequest[]
+
+  @@index([appliedBankCode])
+  @@index([approvedBankCode])
+  @@index([accountStatus])
+  @@map("users")
+}
+
+/// email_otps Email 一次性驗證碼
+model EmailOtp {
+  otpId         String     @id @default(cuid())
+  userId        String
+  email         String
+  purpose       OtpPurpose
+  codeHash      String
+  expiresAt     DateTime
+  attemptCount  Int        @default(0)
+  maxAttempts   Int        @default(5)
+  isUsed        Boolean    @default(false)
+  invalidatedAt DateTime?
+  resendAfter   DateTime
+  createdAt     DateTime   @default(now())
+
+  user User @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@index([userId, purpose])
+  @@map("email_otps")
+}
+
+/// account_approval_logs 帳號審核歷程（只可新增，不可覆寫 — 由應用層強制）
+model AccountApprovalLog {
+  logId          String         @id @default(cuid())
+  userId         String
+  action         ApprovalAction
+  performedBy    String?
+  previousStatus AccountStatus?
+  newStatus      AccountStatus?
+  reason         String?
+  createdAt      DateTime       @default(now())
+
+  user      User  @relation("ApprovalSubject", fields: [userId], references: [userId])
+  performer User? @relation("ApprovalPerformer", fields: [performedBy], references: [userId])
+
+  @@index([userId])
+  @@map("account_approval_logs")
+}
+
+/// cases 調解案件主檔
+model Case {
+  caseId               String     @id @default(cuid())
+  caseNumber           String     @unique
+  debtorId             String
+  debtorName           String
+  mainBankCode         String
+  receiptDate          DateTime
+  mediationDate        DateTime?
+  mediationInstitution String?
+  notificationDate     DateTime?
+  declarationDeadline  DateTime
+  status               CaseStatus @default(DRAFT)
+
+  // 還款方案（案件本質＝最大債權行與債務人談定的還款計畫，長期逐月更新）
+  totalDebtAmount    Decimal?  @db.Decimal(21, 4)
+  monthlyInstallment Decimal?  @db.Decimal(21, 4)
+  planStartDate      DateTime?
+  planInstallments   Int?
+  settledAt          DateTime?
+  terminatedAt       DateTime?
+  terminationReason  String?
+
+  createdBy String
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  mainBank Bank @relation("CaseMainBank", fields: [mainBankCode], references: [bankCode])
+  creator  User @relation("CaseCreatedBy", fields: [createdBy], references: [userId])
+
+  participants     CaseParticipantBank[]
+  declarations     CreditorDeclaration[]
+  repaymentRecords RepaymentRecord[]
+
+  @@index([status])
+  @@index([mainBankCode])
+  @@index([debtorId])
+  @@map("cases")
+}
+
+/// case_participant_banks 案件參與銀行（複合主鍵：一案一行只有一列）
+model CaseParticipantBank {
+  caseId     String
+  bankCode   String
+  roleInCase CaseBankRole
+  invitedAt  DateTime     @default(now())
+
+  // 收到案件後的「確認 / 異議」流程（其他債權行使用；最大債權行本身為 NOT_REQUIRED）
+  confirmationStatus ParticipantConfirmationStatus @default(PENDING)
+  confirmedBy        String?
+  confirmedAt        DateTime?
+  disputeReason      String?
+  disputedAt         DateTime?
+
+  case      Case  @relation(fields: [caseId], references: [caseId], onDelete: Cascade)
+  bank      Bank  @relation(fields: [bankCode], references: [bankCode])
+  confirmer User? @relation("ParticipantConfirmedBy", fields: [confirmedBy], references: [userId])
+
+  @@id([caseId, bankCode])
+  @@index([bankCode])
+  @@index([confirmationStatus])
+  @@map("case_participant_banks")
+}
+
+/// creditor_declarations 各債權行在案件中的「債權資料容器」（明細掛在其下）
+/// 由最大債權行代填，無送件/退回工作流；退回改由參與銀行的異議流程處理。
+model CreditorDeclaration {
+  declarationId String   @id @default(cuid())
+  caseId        String
+  bankCode      String
+  totalAmount   Decimal  @default(0) @db.Decimal(21, 4)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  case  Case @relation(fields: [caseId], references: [caseId], onDelete: Cascade)
+  bank  Bank @relation(fields: [bankCode], references: [bankCode])
+  items CreditItem[]
+
+  @@unique([caseId, bankCode])
+  @@index([bankCode])
+  @@map("creditor_declarations")
+}
+
+/// credit_items 債權明細
+model CreditItem {
+  itemId            String    @id @default(cuid())
+  declarationId     String
+  claimType         ClaimType
+  externalPrincipal Decimal   @default(0) @db.Decimal(21, 4)
+  externalInterest  Decimal   @default(0) @db.Decimal(21, 4)
+  externalPenalty   Decimal   @default(0) @db.Decimal(21, 4)
+  externalOtherFee  Decimal   @default(0) @db.Decimal(21, 4)
+  externalTotal     Decimal   @default(0) @db.Decimal(21, 4) // 後端計算後寫入（快照）
+  internalTotal     Decimal   @default(0) @db.Decimal(21, 4) // 可視性依方案B，在應用層控管
+  note              String?
+
+  declaration CreditorDeclaration @relation(fields: [declarationId], references: [declarationId], onDelete: Cascade)
+
+  @@index([declarationId])
+  @@map("credit_items")
+}
+
+/// audit_logs 全系統操作稽核（只可新增）
+model AuditLog {
+  logId      String          @id @default(cuid())
+  userId     String?
+  bankCode   String?
+  actionType AuditActionType
+  targetType String?
+  targetId   String?
+  detail     String?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime        @default(now())
+
+  user User? @relation(fields: [userId], references: [userId])
+  bank Bank? @relation(fields: [bankCode], references: [bankCode])
+
+  @@index([createdAt])
+  @@index([userId])
+  @@index([actionType])
+  @@map("audit_logs")
+}
+
+/// notifications 通知
+model Notification {
+  notificationId       String           @id @default(cuid())
+  userId               String
+  type                 NotificationType
+  relatedCaseId        String?
+  relatedDeclarationId String?
+  message              String
+  isRead               Boolean          @default(false)
+  createdAt            DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+/// repayment_records 每月還款紀錄（每案 × 每債權行 × 每期 一筆）
+model RepaymentRecord {
+  recordId           String   @id @default(cuid())
+  caseId             String
+  bankCode           String
+  period             String // 期別 YYYY-MM，例如 2026-07
+  periodRepaid       Decimal  @default(0) @db.Decimal(21, 4)
+  outstandingBalance Decimal  @default(0) @db.Decimal(21, 4)
+  recordedBy         String
+  recordedAt         DateTime @default(now())
+  note               String?
+
+  case     Case @relation(fields: [caseId], references: [caseId], onDelete: Cascade)
+  bank     Bank @relation(fields: [bankCode], references: [bankCode])
+  recorder User @relation("RepaymentRecordedBy", fields: [recordedBy], references: [userId])
+
+  @@unique([caseId, bankCode, period])
+  @@index([caseId, period])
+  @@index([bankCode])
+  @@map("repayment_records")
+}
+
+/// invitations 管理員邀請制建帳號（一次性邀請碼、預設 3 天效期，免寄信：由管理員手動遞送）
+model Invitation {
+  invitationId   String           @id @default(cuid())
+  email          String
+  bankCode       String
+  role           Role
+  purpose        InvitationPurpose @default(NEW_ACCOUNT)
+  codeHash       String // 邀請碼密鑰的雜湊（明碼僅建立當下回傳一次）
+  status         InvitationStatus @default(PENDING)
+  expiresAt      DateTime
+  createdBy      String
+  acceptedUserId String?
+  acceptedAt     DateTime?
+  createdAt      DateTime         @default(now())
+
+  bank    Bank @relation(fields: [bankCode], references: [bankCode])
+  creator User @relation("InvitationCreatedBy", fields: [createdBy], references: [userId])
+
+  @@index([email])
+  @@index([status])
+  @@map("invitations")
+}
+
+/// password_reset_requests 使用者申請密碼重置，供管理員檢視並核發重置碼
+model PasswordResetRequest {
+  requestId  String             @id @default(cuid())
+  userId     String
+  email      String
+  bankCode   String
+  status     ResetRequestStatus @default(PENDING)
+  createdAt  DateTime           @default(now())
+  resolvedAt DateTime?
+  resolvedBy String?
+
+  user User @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@index([status])
+  @@map("password_reset_requests")
+}

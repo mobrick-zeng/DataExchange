@@ -1,0 +1,62 @@
+# 正式全棧部署：db(PostgreSQL) + api(Fastify) + web(前端靜態) + caddy(反向代理/自動 HTTPS)
+# 用法：
+#   本機驗證： docker compose -f docker-compose.fullstack.yml up --build
+#             瀏覽器開 https://localhost （自簽憑證，瀏覽器會提示，可略過）
+#   正式部署： 在伺服器設環境變數 DOMAIN=your.domain 與 JWT_SECRET，再執行同一指令
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mediation
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-apppass}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d mediation"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://app:${DB_PASSWORD:-apppass}@db:5432/mediation?schema=public
+      JWT_SECRET: ${JWT_SECRET:-please-change-this-to-a-long-random-secret-32chars}
+      PORT: 4000
+      CORS_ORIGIN: ${PUBLIC_ORIGIN:-https://localhost}
+      SEED_MODE: ${SEED_MODE:-demo} # demo（含示範帳號）｜production（只建 admin + 銀行）
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      args:
+        # 空字串＝前端同源呼叫 /api，由 Caddy 代理到後端
+        VITE_API_BASE: ""
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - web
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

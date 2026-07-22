@@ -1,0 +1,23 @@
+# 本機開發：只在 Docker 跑 PostgreSQL，後端與前端以 npm 在本機執行（開發最快）
+# 正式全棧部署（db + api + web + Caddy）另有一份 compose，於最後階段建立。
+services:
+  db:
+    image: postgres:16
+    container_name: mediation-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mediation
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: apppass
+    ports:
+      - "5544:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d mediation"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:

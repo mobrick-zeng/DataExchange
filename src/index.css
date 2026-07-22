@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: #f5f5f7;
+  color: #1d1d1f; /* Apple 近黑，全站預設文字色 */
+  -webkit-font-smoothing: antialiased; /* 字體更細緻，Apple 質感關鍵 */
+}
+
+* {
+  scrollbar-color: #c7c7cc transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: #c7c7cc; /* 淺灰捲軸 */
+  border-radius: 9999px;
+}
