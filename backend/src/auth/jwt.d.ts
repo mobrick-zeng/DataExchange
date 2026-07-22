@@ -4,8 +4,8 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
 // JWT 內容型別
 export interface JwtUser {
   userId: string
-  role: 'ADMIN' | 'BANK_STAFF' | 'VIEWER' | 'PLATFORM_AUDITOR' | null
-  bankCode: string | null
+  role: 'ADMIN' | 'BANK_STAFF' | 'PLATFORM_AUDITOR'
+  bankCode: string
   name: string
 }
 

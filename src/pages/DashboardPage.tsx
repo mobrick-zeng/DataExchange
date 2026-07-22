@@ -15,7 +15,8 @@ interface DashboardSummary {
     repaymentUpdatesDue: number
   }
   asCoBank?: { toConfirm: number; myDisputes: number; casesByStatus: Record<string, number> }
-  pendingUserApprovals?: number
+  pendingUserActivations?: number
+  pendingResetRequests?: number
   allCasesByStatus?: Record<string, number>
   totalCases?: number
 }
@@ -97,7 +98,7 @@ export function DashboardPage() {
             {currentUser.role && <span className="text-slate-500">（{ROLE_LABELS[currentUser.role]}）</span>}
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            所屬機構：{formatBankLabel(currentUser.approvedBankCode)}
+            所屬機構：{formatBankLabel(currentUser.bankCode, currentUser.bankName)}
             {summary && <span className="ml-3">本期：{summary.period}</span>}
           </p>
         </div>
@@ -154,7 +155,8 @@ export function DashboardPage() {
             <section className="flex flex-col gap-3">
               <h2 className="text-sm font-semibold text-slate-900">平台管理</h2>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <StatCard icon="📋" label="待審核帳號" value={summary.pendingUserApprovals ?? 0} to="/admin/users" tone="alert" />
+                <StatCard icon="📋" label="待啟用帳號" value={summary.pendingUserActivations ?? 0} to="/admin/users" tone="alert" />
+                <StatCard icon="🔑" label="待處理重置申請" value={summary.pendingResetRequests ?? 0} to="/admin/users" tone="alert" />
                 <StatCard icon="📁" label="全平台案件數" value={summary.totalCases ?? 0} to="/cases" />
               </div>
               <div className="rounded-2xl border border-surface-border bg-surface-raised p-5 shadow-card">

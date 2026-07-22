@@ -27,7 +27,8 @@ export async function dashboardRoutes(app: FastifyInstance) {
     const summary: Record<string, unknown> = { role, period, unreadNotifications }
 
     if (role === 'ADMIN') {
-      summary.pendingUserApprovals = await prisma.user.count({ where: { accountStatus: 'PENDING_REVIEW' } })
+      summary.pendingUserActivations = await prisma.user.count({ where: { accountStatus: 'PENDING_ACTIVATION' } })
+      summary.pendingResetRequests = await prisma.passwordResetRequest.count({ where: { status: 'PENDING' } })
       summary.allCasesByStatus = await casesByStatus({})
       summary.totalCases = await prisma.case.count()
     }
@@ -56,7 +57,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
       const ids = inRepayment.map((c) => c.caseId)
       let repaymentUpdatesDue = 0
       if (ids.length) {
-        const updated = await prisma.repaymentRecord.findMany({
+        const updated = await prisma.repaymentPeriod.findMany({
           where: { caseId: { in: ids }, period },
           select: { caseId: true },
           distinct: ['caseId'],

@@ -13,6 +13,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/cases', label: '案件列表', icon: '📁', roles: 'all' },
   { to: '/cases/new', label: '新增案件', icon: '➕', roles: ['BANK_STAFF'] },
   { to: '/admin/users', label: '使用者與權限管理', icon: '👤', roles: ['ADMIN'] },
+  { to: '/admin/institutions', label: '機構啟用管理', icon: '🏦', roles: ['ADMIN'] },
   { to: '/audit-logs', label: '操作紀錄', icon: '🧾', roles: ['ADMIN', 'PLATFORM_AUDITOR'] },
 ]
 

@@ -9,6 +9,8 @@ export async function writeAudit(params: {
   bankCode?: string | null
   targetType?: string
   targetId?: string
+  fromStatus?: string
+  toStatus?: string
   detail?: string
   req?: FastifyRequest
 }) {
@@ -19,6 +21,8 @@ export async function writeAudit(params: {
       bankCode: params.bankCode ?? null,
       targetType: params.targetType,
       targetId: params.targetId,
+      fromStatus: params.fromStatus,
+      toStatus: params.toStatus,
       detail: params.detail,
       ipAddress: params.req?.ip,
       userAgent: params.req?.headers['user-agent'],

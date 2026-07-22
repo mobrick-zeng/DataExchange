@@ -24,17 +24,18 @@ export async function auditRoutes(app: FastifyInstance) {
       where,
       orderBy: { createdAt: 'desc' },
       take: limit,
-      include: { user: { select: { name: true } }, bank: { select: { bankName: true } } },
+      include: { user: { select: { name: true } } },
     })
     return {
       logs: logs.map((l) => ({
         logId: l.logId,
         actionType: l.actionType,
         userName: l.user?.name ?? null,
-        bankName: l.bank?.bankName ?? null,
         bankCode: l.bankCode,
         targetType: l.targetType,
         targetId: l.targetId,
+        fromStatus: l.fromStatus,
+        toStatus: l.toStatus,
         detail: l.detail,
         ipAddress: l.ipAddress,
         createdAt: l.createdAt,

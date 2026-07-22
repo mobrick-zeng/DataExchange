@@ -17,10 +17,13 @@ interface AuditRow {
 
 const ACTION_LABELS: Record<string, string> = {
   LOGIN_SUCCESS: '登入成功', LOGIN_FAILED: '登入失敗', LOGOUT: '登出',
-  CREATE_CASE: '建立案件', UPDATE_CASE: '編輯案件', PUBLISH_CASE: '發布案件', INVITE_BANK: '邀請銀行',
-  CONFIRM_CASE_RECEIPT: '確認案件', DISPUTE_CASE: '回報異議', RECORD_REPAYMENT: '登記還款',
-  SETTLE_CASE: '結清案件', TERMINATE_CASE: '終止案件', VIEW_INTERNAL_TOTAL: '查看內部金額',
-  ACCOUNT_APPROVED: '核准帳號', ACCOUNT_REJECTED: '駁回帳號', ACCOUNT_SUSPENDED: '停用帳號', ACCOUNT_REACTIVATED: '重啟帳號',
+  ACCOUNT_CREATED: '建立帳號', ACCOUNT_ACTIVATED: '啟用帳號', CONSENT_GIVEN: '個資同意',
+  ACCOUNT_SUSPENDED: '停用帳號', ACCOUNT_REACTIVATED: '復用帳號', ACCOUNT_LOCKED: '帳號鎖定', ACCOUNT_UNLOCKED: '解除鎖定',
+  PASSWORD_CHANGED: '變更密碼', PASSWORD_RESET_REQUESTED: '申請密碼重置', PASSWORD_RESET_ISSUED: '核發重置碼',
+  CASE_CREATED: '建立案件', CASE_UPDATED: '編輯案件', PARTICIPANT_INVITED: '邀請債權行', CASE_PUBLISHED: '發布案件',
+  CASE_CONFIRMED: '確認案件', CASE_DISPUTED: '回報異議', PLAN_RATIO_UPDATED: '設定還款計畫',
+  REPAYMENT_RECORDED: '登記還款', CASE_SETTLED: '結清案件', CASE_TERMINATED: '終止案件', INTERNAL_TOTAL_VIEWED: '查看內部金額',
+  BANK_ACTIVATED: '啟用機構', BANK_DEACTIVATED: '停用機構', COURT_ACTIVATED: '啟用法院', COURT_DEACTIVATED: '停用法院',
 }
 
 const ACTION_FILTERS = [{ value: '', label: '全部事件' }, ...Object.entries(ACTION_LABELS).map(([value, label]) => ({ value, label }))]

@@ -14,7 +14,7 @@ import { caseFlowRoutes } from './routes/caseFlow.js'
 import { userAdminRoutes } from './routes/usersAdmin.js'
 import { notificationRoutes } from './routes/notifications.js'
 import { auditRoutes } from './routes/audit.js'
-import { invitationRoutes } from './routes/invitations.js'
+import { courtRoutes } from './routes/courts.js'
 import { passwordResetRoutes } from './routes/passwordReset.js'
 
 const app = Fastify({ logger: true })
@@ -39,12 +39,12 @@ async function bootstrap() {
   await app.register(authRoutes, { prefix: '/api/auth' })
   await app.register(dashboardRoutes, { prefix: '/api/dashboard' })
   await app.register(bankRoutes, { prefix: '/api/banks' })
+  await app.register(courtRoutes, { prefix: '/api/courts' })
   await app.register(caseRoutes, { prefix: '/api/cases' })
   await app.register(caseFlowRoutes, { prefix: '/api/cases' })
   await app.register(userAdminRoutes, { prefix: '/api/users' })
   await app.register(notificationRoutes, { prefix: '/api/notifications' })
   await app.register(auditRoutes, { prefix: '/api/audit-logs' })
-  await app.register(invitationRoutes, { prefix: '/api/invitations' })
   await app.register(passwordResetRoutes, { prefix: '/api' })
 
   await app.listen({ host: '0.0.0.0', port: config.port })

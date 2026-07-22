@@ -38,7 +38,7 @@ export function TopBar({ user, onLogout, onToggleSidebar }: TopBarProps) {
         </button>
         <div className="hidden flex-col leading-tight sm:flex">
           <span className="text-xs text-slate-500">目前登入機構</span>
-          <span className="text-sm font-medium text-slate-900">{formatBankLabel(user.approvedBankCode)}</span>
+          <span className="text-sm font-medium text-slate-900">{formatBankLabel(user.bankCode, user.bankName)}</span>
         </div>
       </div>
 
@@ -62,7 +62,7 @@ export function TopBar({ user, onLogout, onToggleSidebar }: TopBarProps) {
             <div className="absolute right-0 z-40 mt-2 w-56 rounded-xl border border-surface-border bg-surface-raised p-2 shadow-card">
               <div className="border-b border-surface-border px-3 py-2 sm:hidden">
                 <p className="text-xs text-slate-500">目前登入機構</p>
-                <p className="text-sm text-slate-900">{formatBankLabel(user.approvedBankCode)}</p>
+                <p className="text-sm text-slate-900">{formatBankLabel(user.bankCode, user.bankName)}</p>
               </div>
               <div className="px-3 py-2">
                 <p className="text-sm font-medium text-slate-900">{user.name}</p>

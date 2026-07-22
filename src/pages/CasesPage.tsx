@@ -8,12 +8,13 @@ import { EmptyState } from '@/components/EmptyState'
 
 interface CaseRow {
   caseId: string
-  caseNumber: string
-  debtorName: string
+  courtCode: string
+  courtName: string
+  docNumber: string
   mainBankCode: string
   mainBankName: string
   status: string
-  declarationDeadline: string
+  confirmationDeadline: string | null
   totalDebtAmount: string | null
   participantCount: number
   myRoleInCase: string | null
@@ -115,8 +116,8 @@ export function CasesPage() {
             <thead>
               <tr className="border-b border-surface-border text-left text-xs text-slate-500">
                 <th className="w-10 p-3"></th>
-                <th className="p-3">案號</th>
-                <th className="p-3">債務人</th>
+                <th className="p-3">公文文號</th>
+                <th className="p-3">法院</th>
                 <th className="p-3">最大債權行</th>
                 <th className="p-3">狀態</th>
                 <th className="p-3">我的角色</th>
@@ -135,9 +136,9 @@ export function CasesPage() {
                       )}
                     </td>
                     <td className="p-3">
-                      <Link to={`/cases/${c.caseId}`} className="font-medium text-brand-700 hover:underline">{c.caseNumber}</Link>
+                      <Link to={`/cases/${c.caseId}`} className="font-medium text-brand-700 hover:underline">{c.docNumber}</Link>
                     </td>
-                    <td className="p-3 text-slate-900">{c.debtorName}</td>
+                    <td className="p-3 text-slate-900">{c.courtName}</td>
                     <td className="p-3 text-slate-700">{c.mainBankName}</td>
                     <td className="p-3">
                       <span className={`rounded-full px-2.5 py-1 text-xs ${STATUS_CLASS[c.status] ?? 'bg-slate-500/15 text-slate-700'}`}>

@@ -2,7 +2,6 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppLayout } from '@/layouts/AppLayout'
 import { AuthLayoutRoute } from '@/layouts/AuthLayoutRoute'
 import { LoginPage } from '@/pages/LoginPage'
-import { RegisterPage } from '@/pages/RegisterPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
 import { ForgotPasswordPage } from '@/pages/ForgotPasswordPage'
@@ -10,6 +9,7 @@ import { CasesPage } from '@/pages/CasesPage'
 import { CaseEditorPage } from '@/pages/CaseEditorPage'
 import { CaseDetailPage } from '@/pages/CaseDetailPage'
 import { AdminUsersPage } from '@/pages/AdminUsersPage'
+import { AdminInstitutionsPage } from '@/pages/AdminInstitutionsPage'
 import { AuditLogsPage } from '@/pages/AuditLogsPage'
 
 /**
@@ -24,7 +24,6 @@ export function AppRoutes() {
     <Routes>
       <Route element={<AuthLayoutRoute />}>
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       </Route>
 
@@ -35,6 +34,7 @@ export function AppRoutes() {
         <Route path="/cases/:caseId" element={<CaseDetailPage />} />
         <Route path="/cases/:caseId/edit" element={<CaseEditorPage />} />
         <Route path="/admin/users" element={<AdminUsersPage />} />
+        <Route path="/admin/institutions" element={<AdminInstitutionsPage />} />
         <Route path="/audit-logs" element={<AuditLogsPage />} />
       </Route>
 

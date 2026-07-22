@@ -19,10 +19,9 @@ export async function notifyBankUsers(params: {
   type: NotificationType
   message: string
   relatedCaseId?: string
-  relatedDeclarationId?: string
 }) {
   const users = await prisma.user.findMany({
-    where: { approvedBankCode: params.bankCode, accountStatus: 'ACTIVE' },
+    where: { bankCode: params.bankCode, accountStatus: 'ACTIVE' },
     select: { userId: true },
   })
   if (users.length === 0) return
@@ -32,7 +31,6 @@ export async function notifyBankUsers(params: {
       type: params.type,
       message: params.message,
       relatedCaseId: params.relatedCaseId,
-      relatedDeclarationId: params.relatedDeclarationId,
     })),
   })
 }

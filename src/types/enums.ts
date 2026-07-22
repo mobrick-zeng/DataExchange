@@ -4,29 +4,21 @@
  * ⚠️ 權威來源為後端 Prisma enum（backend/prisma/schema.prisma）；本檔須與其保持一致。
  */
 
-/** 銀行／機構代碼。Demo 固定 4 個，正式版由專案方確認外部系統代碼標準。 */
-export type BankCode = '012' | '807' | '812' | 'PLATFORM'
-
-export const BANK_CODES: BankCode[] = ['012', '807', '812', 'PLATFORM']
-
-/** 一般銀行（不含平台管理單位），供邀請／下拉選單使用 */
-export const REGISTRABLE_BANK_CODES: BankCode[] = ['012', '807', '812']
+/** 銀行／機構代碼（3 碼字串；清單由後端 /api/banks 提供，前端不再寫死）。 */
+export type BankCode = string
 
 /** 使用者角色（對應後端 Role）。BANK_STAFF 的主辦／其他債權行身分因案動態認定，不另設角色。 */
 export type Role =
   | 'ADMIN' // 平台管理員
   | 'BANK_STAFF' // 銀行人員
-  | 'VIEWER' // 檢視者
   | 'PLATFORM_AUDITOR' // 平台稽核檢視者
 
-export const ROLES: Role[] = ['ADMIN', 'BANK_STAFF', 'VIEWER', 'PLATFORM_AUDITOR']
+export const ROLES: Role[] = ['ADMIN', 'BANK_STAFF', 'PLATFORM_AUDITOR']
 
 /** 帳號狀態機（對應後端 AccountStatus） */
 export type AccountStatus =
-  | 'UNVERIFIED' // 未驗證 Email
-  | 'PENDING_REVIEW' // 已驗證／待審核
+  | 'PENDING_ACTIVATION' // 待啟用（以啟用碼首次登入並設密碼）
   | 'ACTIVE' // 已啟用
-  | 'REJECTED' // 已駁回
   | 'SUSPENDED' // 已停用
 
 /** 案件狀態機（對應後端 CaseStatus） */
