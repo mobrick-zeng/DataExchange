@@ -3,6 +3,11 @@ dist
 dist-ssr
 *.local
 
+# 機密：實際的 .env 一律不進版控；只保留 *.example 範本
+.env
+.env.*
+!.env.*.example
+
 # Editor
 .vscode/*
 !.vscode/extensions.json

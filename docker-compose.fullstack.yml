@@ -1,8 +1,9 @@
 # 正式全棧部署：db(PostgreSQL) + api(Fastify) + web(前端靜態) + caddy(反向代理/自動 HTTPS)
 # 用法：
-#   本機驗證： docker compose -f docker-compose.fullstack.yml up --build
-#             瀏覽器開 https://localhost （自簽憑證，瀏覽器會提示，可略過）
-#   正式部署： 在伺服器設環境變數 DOMAIN=your.domain 與 JWT_SECRET，再執行同一指令
+#   本機／IP 驗證： docker compose -f docker-compose.fullstack.yml up --build
+#                 未設 DOMAIN → 走 :80 純 HTTP，瀏覽器開 http://localhost 或 http://<公網IP>（如 OCI）
+#   正式部署(HTTPS)： 設環境變數 DOMAIN=your.domain 與 JWT_SECRET，再執行同一指令
+#                    （Caddy 自動申請 Let's Encrypt 憑證；需 DNS 指向本機並放行 80/443）
 services:
   db:
     image: postgres:16

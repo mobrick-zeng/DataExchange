@@ -6,10 +6,8 @@ import type {
   CaseBankRole,
   CaseStatus,
   ClaimType,
-  DeclarationStatus,
   NotificationType,
-  OtpPurpose,
-  ParticipantDeclarationStatus,
+  ParticipantConfirmationStatus,
   Role,
 } from './enums'
 
@@ -43,27 +41,6 @@ export interface User {
   lastLoginAt: string | null
   createdAt: string
   updatedAt: string
-}
-
-/** email_otps 資料表 */
-export interface EmailOtp {
-  otpId: string
-  userId: string
-  email: string
-  purpose: OtpPurpose
-  /**
-   * Demo／POC 階段明碼儲存以供 Demo 信箱顯示；
-   * 正式版必須改為雜湊值儲存並於伺服器端比對，原因與密碼相同：
-   * OTP 在有效期間內等同臨時憑證，明碼外洩風險等同密碼外洩。
-   */
-  code: string
-  expiresAt: string
-  attemptCount: number
-  maxAttempts: number
-  isUsed: boolean
-  invalidatedAt: string | null
-  resendAfter: string
-  createdAt: string
 }
 
 /** account_approval_logs 資料表：帳號審核完整歷程，只可新增不可覆寫 */
@@ -104,20 +81,19 @@ export interface CaseParticipantBank {
   bankCode: BankCode
   roleInCase: CaseBankRole
   invitedAt: string
-  declarationStatus: ParticipantDeclarationStatus
+  /** 其他債權行的確認／異議狀態；最大債權行本身為 NOT_REQUIRED */
+  confirmationStatus: ParticipantConfirmationStatus
+  confirmedBy?: string
+  confirmedAt?: string
+  disputeReason?: string
+  disputedAt?: string
 }
 
-/** creditor_declarations 資料表 */
+/** creditor_declarations 資料表：各債權行的債權資料容器（由最大債權行代填，無送件／退回工作流） */
 export interface CreditorDeclaration {
   declarationId: string
   caseId: string
   bankCode: BankCode
-  status: DeclarationStatus
-  submittedBy?: string
-  submittedAt?: string
-  returnedBy?: string
-  returnedAt?: string
-  returnReason?: string
   totalAmount: number
   createdAt: string
   updatedAt: string
@@ -161,16 +137,4 @@ export interface Notification {
   message: string
   isRead: boolean
   createdAt: string
-}
-
-/** Demo 信箱顯示用的衍生結構（非正式資料表，由 EmailOtp 計算而來） */
-export interface DemoMailboxMessage {
-  otpId: string
-  email: string
-  purpose: OtpPurpose
-  subject: string
-  sentAt: string
-  code: string
-  expiresAt: string
-  status: 'VALID' | 'EXPIRED' | 'USED' | 'INVALIDATED'
 }
