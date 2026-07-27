@@ -1,7 +1,7 @@
-# 操作與測試手冊（manual）
+# 操作與測試手冊（MANUAL）
 
-> 適用版本：v0.2（v2 資料模型）。本手冊說明**各角色如何操作**與**如何測試**，並附流程圖。
-> 平台網址：本機 demo 為 `http://localhost:5173`；OCI 部署為 `http://<公網IP>`。
+> 適用版本：**v0.2_TLS_Demo**（v2 資料模型）。本手冊說明**各角色如何操作**與**如何測試**，並附流程圖。
+> 平台網址：staging 為 `https://debit-ex-platform-staging.baasinnovation.com`；本機 demo 為 `http://localhost:5173`；純 IP 部署為 `http://<公網IP>`。
 > 技術現況與部署見 [`docs/系統現況與執行說明.md`](docs/系統現況與執行說明.md)。
 
 ---

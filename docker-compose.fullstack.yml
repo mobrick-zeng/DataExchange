@@ -1,9 +1,18 @@
 # 正式全棧部署：db(PostgreSQL) + api(Fastify) + web(前端靜態) + caddy(反向代理/自動 HTTPS)
+#
+# ★ 本檔預設綁 staging 網域並啟用 HTTPS（DOMAIN / CORS 已內建預設值，見下方）。
+#   非機密的「網域／HTTPS 模式」寫在本 yml；機密（JWT_SECRET、DB_PASSWORD）仍放 OCI 的 .env。
+#   ⚠️ JWT_SECRET 為「必填」：clone 後務必先建 .env 設定它，否則容器會啟動失敗（fail-fast）。
+#   同步本檔到 OCI 後直接 `docker compose ... up -d` 即進 HTTPS 模式，毋須改 .env 的網域設定。
+#   （若 OCI 的 .env 仍留有舊的 DOMAIN= / PUBLIC_ORIGIN=http://<IP>，請刪除或清空那兩行，
+#     否則會覆蓋本檔預設值 → 憑證申請或 CORS 會對不上。）
+#
 # 用法：
-#   本機／IP 驗證： docker compose -f docker-compose.fullstack.yml up --build
-#                 未設 DOMAIN → 走 :80 純 HTTP，瀏覽器開 http://localhost 或 http://<公網IP>（如 OCI）
-#   正式部署(HTTPS)： 設環境變數 DOMAIN=your.domain 與 JWT_SECRET，再執行同一指令
-#                    （Caddy 自動申請 Let's Encrypt 憑證；需 DNS 指向本機並放行 80/443）
+#   HTTPS（預設）： docker compose -f docker-compose.fullstack.yml -p dataexchange up -d --build
+#                 → 瀏覽器開 https://debit-ex-platform-staging.baasinnovation.com
+#                 （需 DNS 指向本機、放行 80/443；Caddy 自動申請 Let's Encrypt 憑證）
+#   IP／HTTP 驗證： 於 .env 設 DOMAIN=:80 且 PUBLIC_ORIGIN=http://<公網IP>，再執行同一指令
+#                 → 綁 :80 純 HTTP，瀏覽器開 http://<公網IP>
 services:
   db:
     image: postgres:16
@@ -25,10 +34,17 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://app:${DB_PASSWORD:-apppass}@db:5432/mediation?schema=public
-      JWT_SECRET: ${JWT_SECRET:-please-change-this-to-a-long-random-secret-32chars}
+      # JWT_SECRET 為必填：未於 .env 設定則容器「啟動失敗並報此訊息」（fail-fast，
+      # 避免沿用公開預設金鑰而讓權杖可被偽造）。產生：openssl rand -base64 48
+      JWT_SECRET: ${JWT_SECRET:?必填：請在 .env 設定 JWT_SECRET（openssl rand -base64 48）}
       PORT: 4000
-      CORS_ORIGIN: ${PUBLIC_ORIGIN:-https://localhost}
-      SEED_MODE: ${SEED_MODE:-demo} # demo（含示範帳號）｜production（只建 admin + 銀行）
+      # 前端同源來源（CORS）。預設為 staging 網域；.env 的 PUBLIC_ORIGIN 可覆蓋（IP/HTTP 時改成 http://<IP>）
+      CORS_ORIGIN: ${PUBLIC_ORIGIN:-https://debit-ex-platform-staging.baasinnovation.com}
+      # 資料模式（僅在「首次建立資料庫」時生效）：預設 demo。
+      #   demo       = 5 組示範帳號(密碼 Demo@1234) + 6 件示範案件（供展示/測試）
+      #   production = 只建 1 組 admin + 銀行/法院主檔（其餘帳號一律啟用碼建立）
+      # 切換 production：於 .env 設 SEED_MODE=production；已建過的庫需先清空 volume 才會重新套用（見文件第五節）。
+      SEED_MODE: ${SEED_MODE:-demo}
     depends_on:
       db:
         condition: service_healthy
@@ -48,9 +64,9 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      # 未設 DOMAIN → 綁 :80（接受任何 Host，含公網 IP，走 HTTP）；
-      # 設 DOMAIN=your.domain → Caddy 改綁該網域並自動申請 Let's Encrypt HTTPS
-      DOMAIN: ${DOMAIN:-:80}
+      # 預設綁 staging 網域 → Caddy 自動申請 Let's Encrypt HTTPS。
+      # 要回到 IP/HTTP：於 .env 設 DOMAIN=:80（綁 :80、接受任何 Host、走 HTTP）。
+      DOMAIN: ${DOMAIN:-debit-ex-platform-staging.baasinnovation.com}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
