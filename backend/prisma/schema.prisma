@@ -1,12 +1,14 @@
 // ============================================================================
-//  集中式金融資料交換平台 — 資料庫 Schema（v2，2026-07-22 重新設計）
-//  設計要點：
-//   - 不儲存債務人個資；案件以 (法院代碼 + 公文文號) 唯一辨識。
-//   - 帳號＝email，單一所屬 bankCode；正式區需啟用碼首次登入並設密碼。
-//   - 參與行合併債權容器，明細掛其下；金額於各行確認當下凍結快照。
-//   - 還款依「還款計畫比例(planRatio)」攤提，尾差由最大債權行吸收。
-//   - 單一 append-only 稽核；Bank/Court 參考表以 isActive 控制可用範圍。
-//  金額 Decimal(21,4)；比例 Decimal(9,6)（0~1，各行加總=1，應用層驗）。
+//  跨行債權申報與彙整平台 — 資料庫 Schema（v0.3，2026-07-28 流程改版）
+//  設計要點（詳見 docs/案件流程設計_債權申報與彙整.md）：
+//   - 只做「跨行債權資訊傳遞與彙整」：申報 → 全員確認 → 一次揭露、產出債權彙整表
+//     → 主辦線下與債務人確認後回報成立/不成立。無還款計劃、無時限控管。
+//   - 各行「自填自己的」債權明細（非主辦代填）；主辦亦自填、自我確認並可修改。
+//   - 封閉式申報：申報期各行只見自己；全員確認後「一次揭露」（防錨定）。
+//   - 揭露後有疑義 → 任一參與行標記 → 全員重新確認（迴圈，round 遞增）。
+//   - 結案（成立/不成立）為終態、完全鎖死；(courtCode, docNumber) 唯一，不得同文號新建。
+//   - 不儲存債務人個資；債務人／法院全程線下。
+//  金額 Decimal(21,4)。
 // ============================================================================
 
 generator client {
@@ -27,9 +29,9 @@ enum BankType {
 }
 
 enum Role {
-  ADMIN // 平台管理員
+  ADMIN // 平台管理員（開發商）：只見案件狀態／進度，不見任何數字
   BANK_STAFF // 銀行人員（主辦/其他債權行因案動態認定）
-  PLATFORM_AUDITOR // 平台稽核（唯讀＋可見 internalTotal）
+  PLATFORM_AUDITOR // 平台稽核（唯讀，可見全部含各行明細）
 }
 
 enum AccountStatus {
@@ -48,19 +50,24 @@ enum ResetRequestStatus {
   RESOLVED // 已核發重置碼
 }
 
+// 案件狀態機：DRAFT → PENDING_CONFIRMATION → PENDING_OUTCOME → ESTABLISHED / NOT_ESTABLISHED
 enum CaseStatus {
-  DRAFT // 建立中（主辦代填、設定計畫比例、邀請）
-  PENDING_CONFIRMATION // 已發布，待各其他債權行確認
-  IN_REPAYMENT // 全數確認、方案生效，逐月攤提還款
-  SETTLED // 已結清
-  TERMINATED // 毀諾／終止
+  DRAFT // 主辦起案＋邀請（依法院公文），尚未發布
+  PENDING_CONFIRMATION // 已發布：各行封閉申報並確認自己（含主辦）
+  PENDING_OUTCOME // 全員確認→一次揭露、已產出債權彙整表，待主辦回報結果
+  ESTABLISHED // 主辦線下與債務人確認後回報「成立」（終態、鎖死）
+  NOT_ESTABLISHED // 主辦回報「不成立」（終態、鎖死）
 }
 
 enum ParticipantConfirmationStatus {
-  NOT_REQUIRED // 主辦本身
-  PENDING // 待確認
-  CONFIRMED // 已確認
-  DISPUTED // 已回報異議
+  PENDING // 待該行自填並確認
+  CONFIRMED // 該行已確認自己的數字
+}
+
+// 參與行被移出的方式（保留紀錄供稽核；可被主辦重新邀請而復原）
+enum ParticipantRemovalKind {
+  REJECTED_SELF // 該行自行拒絕參與（自行生效即移出）
+  REMOVED_BY_MAIN // 主辦移出（誤加／非債權人）
 }
 
 enum CaseBankRole {
@@ -76,15 +83,16 @@ enum ClaimType {
 }
 
 enum NotificationType {
-  CASE_INVITATION
-  CASE_PUBLISHED
-  CONFIRMATION_DEADLINE_REMINDER
-  CASE_CONFIRMED_BY_BANK
-  CASE_DISPUTED_BY_BANK
-  ALL_BANKS_CONFIRMED
-  REPAYMENT_RECORDED
-  CASE_SETTLED
-  CASE_TERMINATED
+  CASE_INVITATION // 被邀請參與案件
+  CASE_PUBLISHED // 案件發布，開放封閉申報
+  PARTICIPANT_CONFIRMED // 某行已完成確認（通知主辦）
+  ALL_CONFIRMED_DISCLOSED // 全員確認、已揭露並產出彙整表
+  DOUBT_RAISED // 有人標記疑義
+  REOPENED_FOR_DOUBT // 因疑義退回，請重新確認
+  PARTICIPATION_REJECTED // 某行拒絕參與（通知主辦）
+  PARTICIPANT_REMOVED // 被主辦移出
+  CASE_ESTABLISHED // 案件回報成立
+  CASE_NOT_ESTABLISHED // 案件回報不成立
 }
 
 enum AuditActionType {
@@ -101,17 +109,20 @@ enum AuditActionType {
   PASSWORD_CHANGED
   PASSWORD_RESET_REQUESTED
   PASSWORD_RESET_ISSUED
+  // ---- 案件流程（v0.3）----
   CASE_CREATED
   CASE_UPDATED
   PARTICIPANT_INVITED
+  PARTICIPANT_REMOVED
+  PARTICIPATION_REJECTED
   CASE_PUBLISHED
-  CASE_CONFIRMED
-  CASE_DISPUTED
-  PLAN_RATIO_UPDATED
-  REPAYMENT_RECORDED
-  CASE_SETTLED
-  CASE_TERMINATED
-  INTERNAL_TOTAL_VIEWED
+  DECLARATION_SUBMITTED // 某行填/改自己的明細
+  CASE_CONFIRMED // 某行確認自己
+  CONFIRMATION_WITHDRAWN // 某行撤回自己的確認
+  CASE_DISCLOSED // 全員確認→一次揭露
+  DOUBT_RAISED // 標記疑義→退回全員重新確認
+  CASE_ESTABLISHED
+  CASE_NOT_ESTABLISHED
   BANK_ACTIVATED
   BANK_DEACTIVATED
   COURT_ACTIVATED
@@ -189,8 +200,9 @@ model User {
   createdAccessCodes       AccessCode[]           @relation("AccessCodeCreatedBy")
   passwordResetRequests    PasswordResetRequest[]
   createdCases             Case[]                 @relation("CaseCreatedBy")
+  reportedOutcomes         Case[]                 @relation("CaseOutcomeReportedBy")
   participantConfirmations CaseParticipantBank[]  @relation("ParticipantConfirmedBy")
-  recordedPeriods          RepaymentPeriod[]      @relation("RepaymentRecordedBy")
+  raisedDoubts             CaseDoubt[]            @relation("DoubtRaisedBy")
   notifications            Notification[]
   auditLogs                AuditLog[]
 
@@ -234,49 +246,49 @@ model PasswordResetRequest {
 
 // ============================== 案件 ==============================
 
-/// 調解案件；以 (courtCode, docNumber) 唯一辨識，不存債務人個資
+/// 案件；以 (courtCode, docNumber) 唯一辨識，不存債務人個資
 model Case {
   caseId    String @id @default(cuid())
   courtCode String // 法院
   docNumber String // 法院公文文號（格式後續確認；僅作辨識，不解析）
 
-  mainBankCode         String // 最大債權行（主辦）
-  receiptDate          DateTime? // 收到公文日
-  confirmationDeadline DateTime? // 各行確認期限
-  status               CaseStatus @default(DRAFT)
+  mainBankCode String // 最大債權行（主辦）；名單來源＝法院公文，系統不驗證完整性
+  receiptDate  DateTime? // 收到公文日（informational）
+  status       CaseStatus @default(DRAFT)
 
-  // 還款計畫（planRatio 放在各參與行）
-  monthlyInstallment Decimal?  @db.Decimal(21, 4) // 每月應還總額
-  planInstallments   Int? // 期數
-  planStartDate      DateTime?
+  // 揭露／輪次（每次因疑義退回重新揭露 round+1）
+  round      Int       @default(1)
+  disclosedAt DateTime? // 最近一次全員確認揭露的時間
 
-  // 全數確認時凍結的金額快照（各行加總）
-  totalDebtAmount Decimal?  @db.Decimal(21, 4)
-  confirmedAt     DateTime?
+  // 揭露時凍結的全案債權總額快照（各行 confirmedClaimAmount 加總）
+  consolidatedTotal Decimal?  @db.Decimal(21, 4)
 
-  settledAt         DateTime?
-  terminatedAt      DateTime?
-  terminationReason String?
+  // 結果回報（終態）
+  outcomeReportedAt   DateTime?
+  outcomeReportedBy   String?
+  notEstablishedReason String? // 不成立時的理由（成立則為 null）
 
   createdBy String
   note      String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  court    Court @relation(fields: [courtCode], references: [courtCode])
-  mainBank Bank  @relation("CaseMainBank", fields: [mainBankCode], references: [bankCode])
-  creator  User  @relation("CaseCreatedBy", fields: [createdBy], references: [userId])
+  court        Court @relation(fields: [courtCode], references: [courtCode])
+  mainBank     Bank  @relation("CaseMainBank", fields: [mainBankCode], references: [bankCode])
+  creator      User  @relation("CaseCreatedBy", fields: [createdBy], references: [userId])
+  outcomeReporter User? @relation("CaseOutcomeReportedBy", fields: [outcomeReportedBy], references: [userId])
 
-  participants     CaseParticipantBank[]
-  repaymentPeriods RepaymentPeriod[]
+  participants CaseParticipantBank[]
+  doubts       CaseDoubt[]
+  snapshots    DeclarationSnapshot[]
 
-  @@unique([courtCode, docNumber]) // 唯一業務鍵
+  @@unique([courtCode, docNumber]) // 唯一業務鍵；結案後不得以同文號新建
   @@index([status])
   @@index([mainBankCode])
   @@map("cases")
 }
 
-/// 案件參與銀行（已合併債權容器）；代理主鍵供明細外鍵使用
+/// 案件參與銀行（債權容器）；每行自填自己的明細並自我確認
 model CaseParticipantBank {
   participantId String       @id @default(cuid())
   caseId        String
@@ -284,25 +296,24 @@ model CaseParticipantBank {
   roleInCase    CaseBankRole
   invitedAt     DateTime     @default(now())
 
-  // 還款計畫比例：建立案件時手動設定、與債權占比無關；發布後鎖定，僅 ADMIN 可改
-  planRatio Decimal @default(0) @db.Decimal(9, 6)
-
-  // 確認 / 異議
+  // 確認（含主辦）
   confirmationStatus ParticipantConfirmationStatus @default(PENDING)
   confirmedBy        String?
   confirmedAt        DateTime?
-  disputeReason      String?
-  disputedAt         DateTime?
 
-  // 確認當下凍結的該行債權總額快照（DRAFT 期間由明細即時加總，不存動態值）
+  // 確認當下凍結的該行債權總額快照
   confirmedClaimAmount Decimal? @db.Decimal(21, 4)
+
+  // 移出／拒絕（保留紀錄；被主辦重新邀請時清空即復原）
+  removedAt     DateTime?
+  removalKind   ParticipantRemovalKind?
+  removalReason String?
 
   case      Case  @relation(fields: [caseId], references: [caseId], onDelete: Cascade)
   bank      Bank  @relation(fields: [bankCode], references: [bankCode])
   confirmer User? @relation("ParticipantConfirmedBy", fields: [confirmedBy], references: [userId])
 
-  items       CreditItem[]
-  allocations RepaymentAllocation[]
+  items CreditItem[]
 
   @@unique([caseId, bankCode])
   @@index([bankCode])
@@ -320,7 +331,6 @@ model CreditItem {
   penalty       Decimal   @default(0) @db.Decimal(21, 4) // 違約金
   otherFee      Decimal   @default(0) @db.Decimal(21, 4) // 其他費用
   // externalTotal = principal+interest+penalty+otherFee（讀取即算，不落地）
-  internalTotal Decimal   @default(0) @db.Decimal(21, 4) // 銀行內部帳列（可視性方案B，僅 PLATFORM_AUDITOR）
   note          String?
 
   participant CaseParticipantBank @relation(fields: [participantId], references: [participantId], onDelete: Cascade)
@@ -329,44 +339,42 @@ model CreditItem {
   @@map("credit_items")
 }
 
-// ============================== 還款 ==============================
+// ============================== 疑義與版本化 ==============================
 
-/// 每期還款（每案×每期一筆）：最大債權行輸入該期實收總額
-model RepaymentPeriod {
-  periodId            String   @id @default(cuid())
-  caseId              String
-  period              String // YYYY-MM
-  actualReceivedTotal Decimal  @db.Decimal(21, 4) // 該期實際收到總額（主辦輸入）
-  hasRoundingAdjust   Boolean  @default(false) // 是否發生尾差（前端提醒用）
-  recordedBy          String
-  recordedAt          DateTime @default(now())
-  note                String?
+/// 揭露後的疑義標記（append-only）；標記→退回 PENDING_CONFIRMATION 全員重新確認
+model CaseDoubt {
+  doubtId          String   @id @default(cuid())
+  caseId           String
+  round            Int // 標記時的案件輪次
+  raisedByBankCode String // 標記者所屬銀行
+  raisedByUserId   String?
+  reason           String // 理由必填
+  pointerBankCode  String? // 指向某行（選填）
+  createdAt        DateTime @default(now())
 
-  case     Case @relation(fields: [caseId], references: [caseId], onDelete: Cascade)
-  recorder User @relation("RepaymentRecordedBy", fields: [recordedBy], references: [userId])
+  case     Case  @relation(fields: [caseId], references: [caseId], onDelete: Cascade)
+  raisedBy User? @relation("DoubtRaisedBy", fields: [raisedByUserId], references: [userId])
 
-  allocations RepaymentAllocation[]
-
-  @@unique([caseId, period])
   @@index([caseId])
-  @@map("repayment_periods")
+  @@map("case_doubts")
 }
 
-/// 每期攤提到各行：原定應還 vs 實際攤得；尾差由主辦吸收
-model RepaymentAllocation {
-  allocationId       String  @id @default(cuid())
-  periodId           String
-  participantId      String
-  plannedAmount      Decimal @default(0) @db.Decimal(21, 4) // 原定應還＝monthlyInstallment×planRatio
-  actualAmount       Decimal @default(0) @db.Decimal(21, 4) // 實際攤得＝實收總額×planRatio（主辦含尾差）
-  roundingAdjustment Decimal @default(0) @db.Decimal(21, 4) // 尾差調整（僅主辦列非 0）
+/// 每一輪揭露時，各參與行申報內容的快照（版本化；供稽核與回溯）
+model DeclarationSnapshot {
+  snapshotId String   @id @default(cuid())
+  caseId     String
+  round      Int
+  bankCode   String
+  roleInCase CaseBankRole
+  itemsJson  String // 該行當輪明細的 JSON 快照
+  claimTotal Decimal  @db.Decimal(21, 4)
+  confirmedAt DateTime?
+  capturedAt DateTime @default(now())
 
-  period      RepaymentPeriod     @relation(fields: [periodId], references: [periodId], onDelete: Cascade)
-  participant CaseParticipantBank @relation(fields: [participantId], references: [participantId], onDelete: Cascade)
+  case Case @relation(fields: [caseId], references: [caseId], onDelete: Cascade)
 
-  @@unique([periodId, participantId])
-  @@index([participantId])
-  @@map("repayment_allocations")
+  @@index([caseId, round])
+  @@map("declaration_snapshots")
 }
 
 // ============================== 通知與稽核 ==============================

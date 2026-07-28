@@ -18,7 +18,7 @@ export function CaseEditorPage() {
   const toast = useToast()
   const [courts, setCourts] = useState<CourtOpt[]>([])
   const [submitting, setSubmitting] = useState(false)
-  const [form, setForm] = useState({ courtCode: '', docNumber: '', receiptDate: '', confirmationDeadline: '', note: '' })
+  const [form, setForm] = useState({ courtCode: '', docNumber: '', receiptDate: '', note: '' })
   const set = (k: keyof typeof form) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [k]: e.target.value }))
 
   useEffect(() => { apiFetch<{ courts: CourtOpt[] }>('/api/courts?activeOnly=1').then((r) => setCourts(r.courts)).catch((e) => toast.error((e as Error).message)) }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -35,11 +35,10 @@ export function CaseEditorPage() {
         courtCode: form.courtCode,
         docNumber: form.docNumber,
         receiptDate: form.receiptDate || undefined,
-        confirmationDeadline: form.confirmationDeadline || undefined,
         note: form.note || undefined,
       }
       const res = await apiFetch<{ caseId: string }>('/api/cases', { method: 'POST', body: JSON.stringify(body) })
-      toast.success('案件已建立，請繼續代填債權、設定還款計畫並邀請其他債權行')
+      toast.success('案件已建立，請填報本行債權、邀請其他債權行後發布')
       navigate(`/cases/${res.caseId}`, { replace: true })
     } catch (e) {
       toast.error((e as Error).message)
@@ -59,7 +58,6 @@ export function CaseEditorPage() {
         <TextField label="法院公文文號 *" value={form.docNumber} onChange={set('docNumber')} placeholder="例：北院民聲字第1130000123號" />
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <TextField label="收文日" type="date" value={form.receiptDate} onChange={set('receiptDate')} />
-          <TextField label="確認期限" type="date" value={form.confirmationDeadline} onChange={set('confirmationDeadline')} />
         </div>
         <TextField label="備註" value={form.note} onChange={set('note')} placeholder="（選填）" />
         <div className="flex justify-end gap-3 pt-2">

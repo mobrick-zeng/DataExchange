@@ -6,7 +6,7 @@ const prisma = new PrismaClient()
 
 const DEMO_PASSWORD = 'Demo@1234'
 const CONSENT_VERSION = 'v1-2026-07'
-// SEED_MODE：'demo'（含全階段示範資料）｜'production'（僅 admin + 銀行/法院主檔）
+// SEED_MODE：'demo'（含各階段示範資料）｜'production'（僅 admin + 銀行/法院主檔）
 const MODE = (process.env.SEED_MODE ?? 'demo').toLowerCase()
 
 // 金額四捨五入到 4 位小數
@@ -85,7 +85,7 @@ const COURTS: { courtCode: string; courtName: string; courtType: string; isActiv
   { courtCode: 'LCD', courtName: '福建連江地方法院', courtType: '地方法院', isActive: false },
 ]
 
-// ============================== 案件示範規格 ==============================
+// ============================== 案件示範規格（v0.3）==============================
 
 type ItemSpec = {
   claimType: 'CREDIT_LOAN' | 'CREDIT_CARD' | 'GUARANTEE' | 'OTHER'
@@ -93,34 +93,31 @@ type ItemSpec = {
   interest: number
   penalty: number
   otherFee: number
-  internalTotal?: number
 }
 type PartSpec = {
   bankCode: string
   role: 'MAIN' | 'CO_BANK'
-  planRatio: number
-  confirm: 'NOT_REQUIRED' | 'PENDING' | 'CONFIRMED' | 'DISPUTED'
-  disputeReason?: string
+  confirm: 'PENDING' | 'CONFIRMED'
   items: ItemSpec[]
+  removed?: { kind: 'REJECTED_SELF' | 'REMOVED_BY_MAIN'; reason: string }
 }
 type CaseSpec = {
   courtCode: string
   docNumber: string
   mainBankCode: string
-  status: 'DRAFT' | 'PENDING_CONFIRMATION' | 'IN_REPAYMENT' | 'SETTLED' | 'TERMINATED'
+  status: 'DRAFT' | 'PENDING_CONFIRMATION' | 'PENDING_OUTCOME' | 'ESTABLISHED' | 'NOT_ESTABLISHED'
   receiptDate?: string
-  confirmationDeadline?: string
   note?: string
   participants: PartSpec[]
-  plan?: { monthlyInstallment: number; planInstallments: number; planStartDate: string }
-  periods?: { period: string; actualReceivedTotal: number }[]
-  settledAt?: string
-  terminatedAt?: string
-  terminationReason?: string
+  outcome?: { established: boolean; notEstablishedReason?: string }
 }
 
 const itemsTotal = (items: ItemSpec[]) =>
   r4(items.reduce((s, it) => s + it.principal + it.interest + it.penalty + it.otherFee, 0))
+
+// 是否為「已揭露」階段（已產出彙整表：待回報或已結案）
+const isDisclosed = (status: CaseSpec['status']) =>
+  status === 'PENDING_OUTCOME' || status === 'ESTABLISHED' || status === 'NOT_ESTABLISHED'
 
 async function main() {
   // ---- 銀行與法院主檔（兩種模式皆需；upsert 冪等）----
@@ -217,82 +214,70 @@ async function main() {
     return
   }
 
-  const commonItems = (base: number): ItemSpec[] => [
-    { claimType: 'CREDIT_LOAN', principal: base, interest: r4(base * 0.05), penalty: 1000, otherFee: 500, internalTotal: base },
-    { claimType: 'CREDIT_CARD', principal: r4(base * 0.4), interest: r4(base * 0.02), penalty: 800, otherFee: 200, internalTotal: r4(base * 0.4) },
+  const items = (base: number): ItemSpec[] => [
+    { claimType: 'CREDIT_LOAN', principal: base, interest: r4(base * 0.05), penalty: 1000, otherFee: 500 },
+    { claimType: 'CREDIT_CARD', principal: r4(base * 0.4), interest: r4(base * 0.02), penalty: 800, otherFee: 200 },
   ]
 
   const specs: CaseSpec[] = [
-    // 1) DRAFT —— 主辦代填、設好比例，尚未發布
+    // 1) DRAFT —— 主辦已起案並邀請，尚未發布（各行尚未申報）
     {
       courtCode: 'TPD', docNumber: '北院民聲字第1130000101號', mainBankCode: '012', status: 'DRAFT',
-      receiptDate: '2026-06-10', confirmationDeadline: '2026-07-31', note: '草稿：主辦代填中',
+      receiptDate: '2026-06-10', note: '草稿：主辦起案、邀請中，尚未發布',
       participants: [
-        { bankCode: '012', role: 'MAIN', planRatio: 0.5, confirm: 'NOT_REQUIRED', items: commonItems(300000) },
-        { bankCode: '808', role: 'CO_BANK', planRatio: 0.3, confirm: 'PENDING', items: commonItems(180000) },
-        { bankCode: '812', role: 'CO_BANK', planRatio: 0.2, confirm: 'PENDING', items: commonItems(120000) },
+        { bankCode: '012', role: 'MAIN', confirm: 'PENDING', items: items(300000) },
+        { bankCode: '808', role: 'CO_BANK', confirm: 'PENDING', items: [] },
+        { bankCode: '812', role: 'CO_BANK', confirm: 'PENDING', items: [] },
       ],
     },
-    // 2) PENDING_CONFIRMATION —— 已發布；808 已確認、812 待確認
+    // 2) PENDING_CONFIRMATION —— 已發布、封閉申報中：主辦與 808 已自我確認、812 待填
     {
       courtCode: 'TPD', docNumber: '北院民聲字第1130000102號', mainBankCode: '012', status: 'PENDING_CONFIRMATION',
-      receiptDate: '2026-06-05', confirmationDeadline: '2026-07-20', note: '已發布，待部分行確認',
+      receiptDate: '2026-06-05', note: '封閉申報中，尚未全員確認（各行只見自己）',
       participants: [
-        { bankCode: '012', role: 'MAIN', planRatio: 0.5, confirm: 'NOT_REQUIRED', items: commonItems(400000) },
-        { bankCode: '808', role: 'CO_BANK', planRatio: 0.3, confirm: 'CONFIRMED', items: commonItems(200000) },
-        { bankCode: '812', role: 'CO_BANK', planRatio: 0.2, confirm: 'PENDING', items: commonItems(150000) },
+        { bankCode: '012', role: 'MAIN', confirm: 'CONFIRMED', items: items(400000) },
+        { bankCode: '808', role: 'CO_BANK', confirm: 'CONFIRMED', items: items(200000) },
+        { bankCode: '812', role: 'CO_BANK', confirm: 'PENDING', items: items(150000) },
       ],
     },
-    // 3) PENDING_CONFIRMATION —— 含異議（812 回報異議）
+    // 3) PENDING_CONFIRMATION —— 812 自行拒絕參與（已移出、留紀錄），其餘待確認
     {
       courtCode: 'SLD', docNumber: '士院民聲字第1130000103號', mainBankCode: '012', status: 'PENDING_CONFIRMATION',
-      receiptDate: '2026-06-01', confirmationDeadline: '2026-07-15', note: '有一家回報異議，待主辦修正',
+      receiptDate: '2026-06-01', note: '一家自行拒絕參與（非本案債權人），主辦可重新邀請',
       participants: [
-        { bankCode: '012', role: 'MAIN', planRatio: 0.6, confirm: 'NOT_REQUIRED', items: commonItems(500000) },
-        { bankCode: '808', role: 'CO_BANK', planRatio: 0.25, confirm: 'CONFIRMED', items: commonItems(200000) },
-        { bankCode: '812', role: 'CO_BANK', planRatio: 0.15, confirm: 'DISPUTED', disputeReason: '利息計算基準日與本行帳載不符，請主辦重新核對。', items: commonItems(120000) },
+        { bankCode: '012', role: 'MAIN', confirm: 'CONFIRMED', items: items(500000) },
+        { bankCode: '808', role: 'CO_BANK', confirm: 'PENDING', items: items(200000) },
+        { bankCode: '812', role: 'CO_BANK', confirm: 'PENDING', items: [], removed: { kind: 'REJECTED_SELF', reason: '本行非此案債權人，帳載查無此聯徵案號。' } },
       ],
     },
-    // 4) IN_REPAYMENT —— 全數確認，2 期還款（第 2 期短繳、產生尾差）
+    // 4) PENDING_OUTCOME —— 全員確認、已揭露、產出債權彙整表，待主辦回報
     {
-      courtCode: 'TPD', docNumber: '北院民聲字第1130000104號', mainBankCode: '808', status: 'IN_REPAYMENT',
-      receiptDate: '2026-04-10', confirmationDeadline: '2026-05-10', note: '還款中',
-      plan: { monthlyInstallment: 30000, planInstallments: 24, planStartDate: '2026-05-01' },
-      periods: [
-        { period: '2026-05', actualReceivedTotal: 30000 },
-        { period: '2026-06', actualReceivedTotal: 25000.01 }, // 故意造成攤提尾差
-      ],
+      courtCode: 'TPD', docNumber: '北院民聲字第1130000104號', mainBankCode: '808', status: 'PENDING_OUTCOME',
+      receiptDate: '2026-04-10', note: '已彙整，待主辦線下與債務人確認後回報成立/不成立',
       participants: [
-        { bankCode: '808', role: 'MAIN', planRatio: 0.5, confirm: 'NOT_REQUIRED', items: commonItems(360000) },
-        { bankCode: '012', role: 'CO_BANK', planRatio: 0.3333, confirm: 'CONFIRMED', items: commonItems(240000) },
-        { bankCode: '812', role: 'CO_BANK', planRatio: 0.1667, confirm: 'CONFIRMED', items: commonItems(120000) },
+        { bankCode: '808', role: 'MAIN', confirm: 'CONFIRMED', items: items(360000) },
+        { bankCode: '012', role: 'CO_BANK', confirm: 'CONFIRMED', items: items(240000) },
+        { bankCode: '812', role: 'CO_BANK', confirm: 'CONFIRMED', items: items(120000) },
       ],
     },
-    // 5) SETTLED —— 已結清
+    // 5) ESTABLISHED —— 已回報成立（彙整表鎖定為正式紀錄）
     {
-      courtCode: 'SLD', docNumber: '士院民聲字第1130000105號', mainBankCode: '012', status: 'SETTLED',
-      receiptDate: '2025-12-01', confirmationDeadline: '2026-01-10', note: '已結清',
-      plan: { monthlyInstallment: 50000, planInstallments: 6, planStartDate: '2026-01-01' },
-      periods: [
-        { period: '2026-01', actualReceivedTotal: 50000 },
-        { period: '2026-02', actualReceivedTotal: 50000 },
-      ],
-      settledAt: '2026-06-30',
+      courtCode: 'SLD', docNumber: '士院民聲字第1130000105號', mainBankCode: '012', status: 'ESTABLISHED',
+      receiptDate: '2025-12-01', note: '已回報成立',
+      outcome: { established: true },
       participants: [
-        { bankCode: '012', role: 'MAIN', planRatio: 0.7, confirm: 'NOT_REQUIRED', items: commonItems(400000) },
-        { bankCode: '808', role: 'CO_BANK', planRatio: 0.3, confirm: 'CONFIRMED', items: commonItems(150000) },
+        { bankCode: '012', role: 'MAIN', confirm: 'CONFIRMED', items: items(400000) },
+        { bankCode: '808', role: 'CO_BANK', confirm: 'CONFIRMED', items: items(150000) },
       ],
     },
-    // 6) TERMINATED —— 毀諾終止
+    // 6) NOT_ESTABLISHED —— 已回報不成立（附理由封存）
     {
-      courtCode: 'TPD', docNumber: '北院民聲字第1130000106號', mainBankCode: '012', status: 'TERMINATED',
-      receiptDate: '2025-11-01', confirmationDeadline: '2025-12-10', note: '債務人違約',
-      plan: { monthlyInstallment: 20000, planInstallments: 12, planStartDate: '2025-12-01' },
-      periods: [{ period: '2025-12', actualReceivedTotal: 20000 }],
-      terminatedAt: '2026-03-15', terminationReason: '債務人連續三期未依調解方案繳款，宣告毀諾。',
+      courtCode: 'TPD', docNumber: '北院民聲字第1130000106號', mainBankCode: '012', status: 'NOT_ESTABLISHED',
+      receiptDate: '2025-11-01', note: '已回報不成立',
+      outcome: { established: false, notEstablishedReason: '債務人未於線下調解程序中同意還款方案，主辦回報本案不成立。' },
       participants: [
-        { bankCode: '012', role: 'MAIN', planRatio: 0.6, confirm: 'NOT_REQUIRED', items: commonItems(300000) },
-        { bankCode: '808', role: 'CO_BANK', planRatio: 0.4, confirm: 'CONFIRMED', items: commonItems(200000) },
+        { bankCode: '012', role: 'MAIN', confirm: 'CONFIRMED', items: items(300000) },
+        { bankCode: '808', role: 'CO_BANK', confirm: 'CONFIRMED', items: items(200000) },
       ],
     },
   ]
@@ -301,12 +286,16 @@ async function main() {
     await createCase(spec, admin.userId, userByBank)
   }
 
-  console.log(`✅ 種子完成（Demo）：${BANKS.length} 家機構、${COURTS.length} 所法院、示範帳號、${specs.length} 件全階段案件`)
+  console.log(`✅ 種子完成（Demo）：${BANKS.length} 家機構、${COURTS.length} 所法院、示範帳號、${specs.length} 件各階段案件`)
 }
 
 async function createCase(spec: CaseSpec, adminId: string, userByBank: Record<string, string>) {
-  const beyondConfirm = spec.status === 'IN_REPAYMENT' || spec.status === 'SETTLED' || spec.status === 'TERMINATED'
   const createdBy = userByBank[spec.mainBankCode] ?? adminId
+  const disclosed = isDisclosed(spec.status)
+  const active = spec.participants.filter((p) => !p.removed)
+
+  // 揭露階段：彙整表凍結總額＝各（未移出）行 items 加總
+  const consolidatedTotal = disclosed ? r4(active.reduce((s, p) => s + itemsTotal(p.items), 0)) : null
 
   const c = await prisma.case.create({
     data: {
@@ -315,41 +304,32 @@ async function createCase(spec: CaseSpec, adminId: string, userByBank: Record<st
       mainBankCode: spec.mainBankCode,
       status: spec.status as any,
       receiptDate: spec.receiptDate ? new Date(spec.receiptDate) : null,
-      confirmationDeadline: spec.confirmationDeadline ? new Date(spec.confirmationDeadline) : null,
       note: spec.note,
       createdBy,
-      monthlyInstallment: spec.plan ? new Prisma.Decimal(spec.plan.monthlyInstallment) : null,
-      planInstallments: spec.plan?.planInstallments ?? null,
-      planStartDate: spec.plan ? new Date(spec.plan.planStartDate) : null,
-      confirmedAt: beyondConfirm ? new Date() : null,
-      settledAt: spec.settledAt ? new Date(spec.settledAt) : null,
-      terminatedAt: spec.terminatedAt ? new Date(spec.terminatedAt) : null,
-      terminationReason: spec.terminationReason ?? null,
+      round: 1,
+      disclosedAt: disclosed ? new Date() : null,
+      consolidatedTotal: consolidatedTotal != null ? new Prisma.Decimal(consolidatedTotal) : null,
+      outcomeReportedAt: spec.outcome ? new Date() : null,
+      outcomeReportedBy: spec.outcome ? createdBy : null,
+      notEstablishedReason: spec.outcome && !spec.outcome.established ? spec.outcome.notEstablishedReason ?? null : null,
     },
   })
 
-  const partIdByBank: Record<string, string> = {}
-  let totalDebt = 0
-
   for (const p of spec.participants) {
     const claim = itemsTotal(p.items)
-    // 凍結時機：CO_BANK 於確認時凍結；MAIN 或確認後階段一律凍結
-    const frozen = beyondConfirm || p.confirm === 'CONFIRMED' || p.role === 'MAIN'
-    if (frozen) totalDebt = r4(totalDebt + claim)
-
-    const confirmerId = p.confirm === 'CONFIRMED' ? userByBank[p.bankCode] ?? null : null
-    const part = await prisma.caseParticipantBank.create({
+    const confirmed = p.confirm === 'CONFIRMED' && !p.removed
+    await prisma.caseParticipantBank.create({
       data: {
         caseId: c.caseId,
         bankCode: p.bankCode,
         roleInCase: p.role as any,
-        planRatio: new Prisma.Decimal(p.planRatio),
-        confirmationStatus: p.confirm as any,
-        confirmedBy: confirmerId,
-        confirmedAt: p.confirm === 'CONFIRMED' ? new Date() : null,
-        disputeReason: p.confirm === 'DISPUTED' ? p.disputeReason ?? null : null,
-        disputedAt: p.confirm === 'DISPUTED' ? new Date() : null,
-        confirmedClaimAmount: frozen ? new Prisma.Decimal(claim) : null,
+        confirmationStatus: confirmed ? 'CONFIRMED' : 'PENDING',
+        confirmedBy: confirmed ? userByBank[p.bankCode] ?? null : null,
+        confirmedAt: confirmed ? new Date() : null,
+        confirmedClaimAmount: confirmed ? new Prisma.Decimal(claim) : null,
+        removedAt: p.removed ? new Date() : null,
+        removalKind: p.removed ? (p.removed.kind as any) : null,
+        removalReason: p.removed ? p.removed.reason : null,
         items: {
           create: p.items.map((it) => ({
             claimType: it.claimType as any,
@@ -357,77 +337,28 @@ async function createCase(spec: CaseSpec, adminId: string, userByBank: Record<st
             interest: new Prisma.Decimal(it.interest),
             penalty: new Prisma.Decimal(it.penalty),
             otherFee: new Prisma.Decimal(it.otherFee),
-            internalTotal: new Prisma.Decimal(it.internalTotal ?? 0),
           })),
         },
       },
     })
-    partIdByBank[p.bankCode] = part.participantId
   }
 
-  // 只有確認後階段才凍結案件總額
-  if (beyondConfirm) {
-    await prisma.case.update({ where: { caseId: c.caseId }, data: { totalDebtAmount: new Prisma.Decimal(totalDebt) } })
-  }
-
-  // 還款期別 + 攤提（尾差由主辦吸收）
-  if (spec.plan && spec.periods && spec.periods.length) {
-    const parts = spec.participants.map((p) => ({
-      bankCode: p.bankCode,
-      ratio: p.planRatio,
-      isMain: p.role === 'MAIN',
-      participantId: partIdByBank[p.bankCode],
-    }))
-    const recordedBy = userByBank[spec.mainBankCode] ?? adminId
-
-    for (const per of spec.periods) {
-      const planned = splitByRatio(spec.plan.monthlyInstallment, parts)
-      const actual = splitByRatio(per.actualReceivedTotal, parts)
-      const hasRounding = actual.remainder !== 0
-
-      const period = await prisma.repaymentPeriod.create({
+  // 揭露階段：為每一（未移出）參與行建立當輪申報快照（版本化）
+  if (disclosed) {
+    for (const p of active) {
+      await prisma.declarationSnapshot.create({
         data: {
           caseId: c.caseId,
-          period: per.period,
-          actualReceivedTotal: new Prisma.Decimal(per.actualReceivedTotal),
-          hasRoundingAdjust: hasRounding,
-          recordedBy,
+          round: 1,
+          bankCode: p.bankCode,
+          roleInCase: p.role as any,
+          itemsJson: JSON.stringify(p.items),
+          claimTotal: new Prisma.Decimal(itemsTotal(p.items)),
+          confirmedAt: new Date(),
         },
       })
-      for (const p of parts) {
-        await prisma.repaymentAllocation.create({
-          data: {
-            periodId: period.periodId,
-            participantId: p.participantId,
-            plannedAmount: new Prisma.Decimal(planned.amounts[p.bankCode]),
-            actualAmount: new Prisma.Decimal(actual.amounts[p.bankCode]),
-            roundingAdjustment: new Prisma.Decimal(p.isMain ? actual.remainder : 0),
-          },
-        })
-      }
     }
   }
-}
-
-// 依比例攤提；尾差記入主辦，確保加總＝total
-function splitByRatio(
-  total: number,
-  parts: { bankCode: string; ratio: number; isMain: boolean }[],
-): { amounts: Record<string, number>; remainder: number } {
-  const amounts: Record<string, number> = {}
-  let allocated = 0
-  const mainBank = parts.find((p) => p.isMain)!
-  for (const p of parts) {
-    if (p.isMain) continue
-    const a = r4(total * p.ratio)
-    amounts[p.bankCode] = a
-    allocated = r4(allocated + a)
-  }
-  const mainShare = r4(total * mainBank.ratio)
-  const mainActual = r4(total - allocated) // 主辦吸收尾差
-  amounts[mainBank.bankCode] = mainActual
-  const remainder = r4(mainActual - mainShare)
-  return { amounts, remainder }
 }
 
 main()

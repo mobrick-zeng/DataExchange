@@ -6,15 +6,13 @@ import { apiFetch, ApiError } from '@/services/api'
 
 interface DashboardSummary {
   role: string
-  period: string
   unreadNotifications: number
   asMain?: {
     casesByStatus: Record<string, number>
     pendingConfirmations: number
-    disputesToHandle: number
-    repaymentUpdatesDue: number
+    outcomeToReport: number
   }
-  asCoBank?: { toConfirm: number; myDisputes: number; casesByStatus: Record<string, number> }
+  asCoBank?: { toConfirm: number; casesByStatus: Record<string, number> }
   pendingUserActivations?: number
   pendingResetRequests?: number
   allCasesByStatus?: Record<string, number>
@@ -22,11 +20,11 @@ interface DashboardSummary {
 }
 
 const CASE_STATUS_LABELS: Record<string, string> = {
-  DRAFT: '建立中',
-  PENDING_CONFIRMATION: '待確認',
-  IN_REPAYMENT: '還款中',
-  SETTLED: '已結清',
-  TERMINATED: '毀諾終止',
+  DRAFT: '草稿',
+  PENDING_CONFIRMATION: '封閉申報中',
+  PENDING_OUTCOME: '待回報',
+  ESTABLISHED: '成立',
+  NOT_ESTABLISHED: '不成立',
 }
 
 function StatCard({ icon, label, value, to, tone = 'default' }: {
@@ -99,7 +97,6 @@ export function DashboardPage() {
           </h1>
           <p className="mt-1 text-sm text-slate-500">
             所屬機構：{formatBankLabel(currentUser.bankCode, currentUser.bankName)}
-            {summary && <span className="ml-3">本期：{summary.period}</span>}
           </p>
         </div>
         {summary && summary.unreadNotifications > 0 && (
@@ -124,9 +121,8 @@ export function DashboardPage() {
             <section className="flex flex-col gap-3">
               <h2 className="text-sm font-semibold text-slate-900">我主辦的案件（最大債權行）</h2>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <StatCard icon="⏳" label="待各行確認" value={summary.asMain.pendingConfirmations} to="/cases" />
-                <StatCard icon="⚠️" label="待處理異議" value={summary.asMain.disputesToHandle} to="/cases" tone="alert" />
-                <StatCard icon="🔴" label="本月待更新還款" value={summary.asMain.repaymentUpdatesDue} to="/cases" tone="alert" />
+                <StatCard icon="⏳" label="待各行確認（申報中）" value={summary.asMain.pendingConfirmations} to="/cases" />
+                <StatCard icon="📣" label="待我回報成立/不成立" value={summary.asMain.outcomeToReport} to="/cases" tone="alert" />
               </div>
               <div className="rounded-2xl border border-surface-border bg-surface-raised p-5 shadow-card">
                 <p className="mb-3 text-sm font-medium text-slate-900">各狀態案件</p>
@@ -140,8 +136,7 @@ export function DashboardPage() {
             <section className="flex flex-col gap-3">
               <h2 className="text-sm font-semibold text-slate-900">我受邀的案件（其他債權行）</h2>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <StatCard icon="🔔" label="待我確認" value={summary.asCoBank.toConfirm} to="/cases" tone="alert" />
-                <StatCard icon="📝" label="我提出的異議" value={summary.asCoBank.myDisputes} to="/cases" />
+                <StatCard icon="🔔" label="待我申報確認" value={summary.asCoBank.toConfirm} to="/cases" tone="alert" />
               </div>
               <div className="rounded-2xl border border-surface-border bg-surface-raised p-5 shadow-card">
                 <p className="mb-3 text-sm font-medium text-slate-900">各狀態案件</p>

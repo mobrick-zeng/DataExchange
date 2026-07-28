@@ -21,20 +21,18 @@ export type AccountStatus =
   | 'ACTIVE' // 已啟用
   | 'SUSPENDED' // 已停用
 
-/** 案件狀態機（對應後端 CaseStatus） */
+/** 案件狀態機（對應後端 CaseStatus，v0.3） */
 export type CaseStatus =
-  | 'DRAFT' // 建立中（最大債權行代填）
-  | 'PENDING_CONFIRMATION' // 已發布，待各其他債權行確認
-  | 'IN_REPAYMENT' // 還款中（每月更新）
-  | 'SETTLED' // 已結清
-  | 'TERMINATED' // 毀諾／終止
+  | 'DRAFT' // 主辦起案＋邀請，尚未發布
+  | 'PENDING_CONFIRMATION' // 封閉申報中：各行自填並確認自己（含主辦）
+  | 'PENDING_OUTCOME' // 全員確認、已揭露、產出彙整表，待主辦回報
+  | 'ESTABLISHED' // 已回報成立（終態）
+  | 'NOT_ESTABLISHED' // 已回報不成立（終態）
 
-/** 其他債權行對案件的確認流程（對應後端 ParticipantConfirmationStatus） */
+/** 各參與行（含主辦）對自己數字的確認狀態（對應後端 ParticipantConfirmationStatus） */
 export type ParticipantConfirmationStatus =
-  | 'NOT_REQUIRED' // 最大債權行本身，無需確認
-  | 'PENDING' // 待確認
-  | 'CONFIRMED' // 已確認
-  | 'DISPUTED' // 已回報異議
+  | 'PENDING' // 待填報並確認
+  | 'CONFIRMED' // 已確認自己的數字
 
 /** 案件中銀行的角色（對應後端 CaseBankRole） */
 export type CaseBankRole = 'MAIN' | 'CO_BANK'
@@ -57,58 +55,48 @@ export type ApprovalAction =
   | 'SUSPEND'
   | 'REACTIVATE'
 
-/** 全系統操作稽核事件（對應後端 AuditActionType） */
+/** 全系統操作稽核事件（對應後端 AuditActionType，v0.3） */
 export type AuditActionType =
   | 'LOGIN_SUCCESS'
   | 'LOGIN_FAILED'
   | 'LOGOUT'
-  | 'REGISTER_SUBMIT'
-  | 'OTP_REQUESTED'
-  | 'OTP_VERIFIED'
-  | 'OTP_VERIFY_FAILED'
-  | 'ACCOUNT_APPROVED'
-  | 'ACCOUNT_REJECTED'
+  | 'ACCOUNT_CREATED'
+  | 'ACCOUNT_ACTIVATED'
   | 'ACCOUNT_SUSPENDED'
   | 'ACCOUNT_REACTIVATED'
-  | 'ROLE_ASSIGNED'
-  | 'BANK_CHANGED'
-  | 'CREATE_CASE'
-  | 'UPDATE_CASE'
-  | 'PUBLISH_CASE'
-  | 'INVITE_BANK'
-  | 'CONFIRM_CASE_RECEIPT'
-  | 'DISPUTE_CASE'
-  | 'RECORD_REPAYMENT'
-  | 'SETTLE_CASE'
-  | 'TERMINATE_CASE'
-  | 'VIEW_INTERNAL_TOTAL'
-  | 'PASSWORD_RESET_SUCCESS'
-  | 'CREATE_INVITATION'
-  | 'REVOKE_INVITATION'
-  | 'ACCEPT_INVITATION'
-  | 'REQUEST_PASSWORD_RESET'
-  | 'ISSUE_PASSWORD_RESET'
   | 'ACCOUNT_LOCKED'
   | 'ACCOUNT_UNLOCKED'
+  | 'CONSENT_GIVEN'
+  | 'PASSWORD_CHANGED'
+  | 'PASSWORD_RESET_REQUESTED'
+  | 'PASSWORD_RESET_ISSUED'
+  | 'CASE_CREATED'
+  | 'CASE_UPDATED'
+  | 'PARTICIPANT_INVITED'
+  | 'PARTICIPANT_REMOVED'
+  | 'PARTICIPATION_REJECTED'
+  | 'CASE_PUBLISHED'
+  | 'DECLARATION_SUBMITTED'
+  | 'CASE_CONFIRMED'
+  | 'CONFIRMATION_WITHDRAWN'
+  | 'CASE_DISCLOSED'
+  | 'DOUBT_RAISED'
+  | 'CASE_ESTABLISHED'
+  | 'CASE_NOT_ESTABLISHED'
+  | 'BANK_ACTIVATED'
+  | 'BANK_DEACTIVATED'
+  | 'COURT_ACTIVATED'
+  | 'COURT_DEACTIVATED'
 
-/** 通知事件類型（對應後端 NotificationType） */
+/** 通知事件類型（對應後端 NotificationType，v0.3） */
 export type NotificationType =
-  | 'ACCOUNT_PENDING_REVIEW'
-  | 'ACCOUNT_APPROVED'
-  | 'ACCOUNT_REJECTED'
   | 'CASE_INVITATION'
-  | 'CONFIRMATION_DEADLINE_REMINDER'
-  | 'CASE_CONFIRMED_BY_BANK'
-  | 'CASE_DISPUTED_BY_BANK'
-  | 'ALL_BANKS_CONFIRMED'
-  | 'REPAYMENT_UPDATE_DUE'
-  | 'REPAYMENT_UPDATED'
-  | 'CASE_SETTLED'
-  | 'CASE_TERMINATED'
-
-/**
- * 依「方案 B」設計：僅此陣列中的角色可查看所有銀行的 internal_total。
- * 未來若要切換為「方案 A」（一般 ADMIN 也可查看），只需將 'ADMIN' 加入此陣列，
- * 不需更動資料模型或分散在各頁面的顯示邏輯。
- */
-export const INTERNAL_TOTAL_VISIBLE_ROLES: Role[] = ['PLATFORM_AUDITOR']
+  | 'CASE_PUBLISHED'
+  | 'PARTICIPANT_CONFIRMED'
+  | 'ALL_CONFIRMED_DISCLOSED'
+  | 'DOUBT_RAISED'
+  | 'REOPENED_FOR_DOUBT'
+  | 'PARTICIPATION_REJECTED'
+  | 'PARTICIPANT_REMOVED'
+  | 'CASE_ESTABLISHED'
+  | 'CASE_NOT_ESTABLISHED'

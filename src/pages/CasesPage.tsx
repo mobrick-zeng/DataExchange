@@ -14,32 +14,30 @@ interface CaseRow {
   mainBankCode: string
   mainBankName: string
   status: string
-  confirmationDeadline: string | null
-  totalDebtAmount: string | null
+  consolidatedTotal: string | null
   participantCount: number
+  confirmedCount: number
   myRoleInCase: string | null
   myConfirmationStatus: string | null
 }
 
 export const CASE_STATUS_LABELS: Record<string, string> = {
-  DRAFT: '建立中',
-  PENDING_CONFIRMATION: '待確認',
-  IN_REPAYMENT: '還款中',
-  SETTLED: '已結清',
-  TERMINATED: '毀諾／終止',
+  DRAFT: '草稿',
+  PENDING_CONFIRMATION: '封閉申報中',
+  PENDING_OUTCOME: '待回報',
+  ESTABLISHED: '成立',
+  NOT_ESTABLISHED: '不成立',
 }
 const STATUS_CLASS: Record<string, string> = {
   DRAFT: 'bg-slate-500/15 text-slate-700',
   PENDING_CONFIRMATION: 'bg-amber-500/15 text-amber-700',
-  IN_REPAYMENT: 'bg-blue-500/15 text-blue-700',
-  SETTLED: 'bg-emerald-500/15 text-emerald-700',
-  TERMINATED: 'bg-rose-500/15 text-rose-700',
+  PENDING_OUTCOME: 'bg-blue-500/15 text-blue-700',
+  ESTABLISHED: 'bg-emerald-500/15 text-emerald-700',
+  NOT_ESTABLISHED: 'bg-rose-500/15 text-rose-700',
 }
 export const CONFIRM_STATUS_LABELS: Record<string, string> = {
-  NOT_REQUIRED: '—',
   PENDING: '待確認',
   CONFIRMED: '已確認',
-  DISPUTED: '已回報異議',
 }
 
 export function money(v: string | null | undefined): string {
@@ -67,7 +65,7 @@ export function CasesPage() {
   }
   useEffect(load, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const confirmable = cases.filter((c) => c.myRoleInCase === 'CO_BANK' && c.myConfirmationStatus === 'PENDING')
+  const confirmable = cases.filter((c) => c.status === 'PENDING_CONFIRMATION' && !!c.myRoleInCase && c.myConfirmationStatus === 'PENDING')
 
   const toggle = (id: string) => {
     setSelected((prev) => {
@@ -100,7 +98,7 @@ export function CasesPage() {
       {confirmable.length > 0 && (
         <div className="flex items-center justify-between rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3">
           <p className="text-sm text-amber-800">
-            有 {confirmable.length} 件待你確認，可勾選後批次確認（已選 {selected.size} 件）
+            有 {confirmable.length} 件待你申報確認，可勾選後批次確認（已選 {selected.size} 件）
           </p>
           <Button size="sm" onClick={batchConfirm} disabled={selected.size === 0}>批次確認</Button>
         </div>
@@ -122,12 +120,13 @@ export function CasesPage() {
                 <th className="p-3">狀態</th>
                 <th className="p-3">我的角色</th>
                 <th className="p-3">我的確認</th>
-                <th className="p-3 text-right">總債權額</th>
+                <th className="p-3">確認進度</th>
+                <th className="p-3 text-right">彙整總額</th>
               </tr>
             </thead>
             <tbody>
               {cases.map((c) => {
-                const canPick = c.myRoleInCase === 'CO_BANK' && c.myConfirmationStatus === 'PENDING'
+                const canPick = c.status === 'PENDING_CONFIRMATION' && !!c.myRoleInCase && c.myConfirmationStatus === 'PENDING'
                 return (
                   <tr key={c.caseId} className="border-b border-surface-border last:border-0 hover:bg-surface-muted/40">
                     <td className="p-3">
@@ -145,9 +144,10 @@ export function CasesPage() {
                         {CASE_STATUS_LABELS[c.status] ?? c.status}
                       </span>
                     </td>
-                    <td className="p-3 text-slate-700">{c.myRoleInCase === 'MAIN' ? '最大債權行' : c.myRoleInCase === 'CO_BANK' ? '其他債權行' : '—'}</td>
+                    <td className="p-3 text-slate-700">{c.myRoleInCase === 'MAIN' ? '主辦（最大債權行）' : c.myRoleInCase === 'CO_BANK' ? '其他債權行' : '—'}</td>
                     <td className="p-3 text-slate-700">{CONFIRM_STATUS_LABELS[c.myConfirmationStatus ?? ''] ?? '—'}</td>
-                    <td className="p-3 text-right text-slate-900">{money(c.totalDebtAmount)}</td>
+                    <td className="p-3 text-slate-700">{c.confirmedCount}/{c.participantCount}</td>
+                    <td className="p-3 text-right text-slate-900">{money(c.consolidatedTotal)}</td>
                   </tr>
                 )
               })}
