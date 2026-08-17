@@ -88,11 +88,14 @@ const COURTS: { courtCode: string; courtName: string; courtType: string; isActiv
 // ============================== 案件示範規格（v0.3）==============================
 
 type ItemSpec = {
-  claimType: 'CREDIT_LOAN' | 'CREDIT_CARD' | 'GUARANTEE' | 'OTHER'
+  claimType: 'CREDIT_CARD' | 'CASH_CARD' | 'CREDIT_LOAN' | 'GUARANTEE' | 'INHERITANCE' | 'OTHER'
   principal: number
   interest: number
   penalty: number
   otherFee: number
+  // 對內債權（僅本行/稽核可見）；未給則以對外本息推估
+  internalPrincipal?: number
+  internalInterest?: number
 }
 type PartSpec = {
   bankCode: string
@@ -214,9 +217,11 @@ async function main() {
     return
   }
 
+  // 每行示範跨數種債權：信用貸款、信用卡、現金卡；對內本息略低於對外（較貼近實務）
   const items = (base: number): ItemSpec[] => [
-    { claimType: 'CREDIT_LOAN', principal: base, interest: r4(base * 0.05), penalty: 1000, otherFee: 500 },
-    { claimType: 'CREDIT_CARD', principal: r4(base * 0.4), interest: r4(base * 0.02), penalty: 800, otherFee: 200 },
+    { claimType: 'CREDIT_LOAN', principal: base, interest: r4(base * 0.05), penalty: 1000, otherFee: 500, internalPrincipal: r4(base * 0.98), internalInterest: r4(base * 0.045) },
+    { claimType: 'CREDIT_CARD', principal: r4(base * 0.4), interest: r4(base * 0.02), penalty: 800, otherFee: 200, internalPrincipal: r4(base * 0.39), internalInterest: r4(base * 0.018) },
+    { claimType: 'CASH_CARD', principal: r4(base * 0.15), interest: r4(base * 0.03), penalty: 0, otherFee: 0, internalPrincipal: r4(base * 0.15), internalInterest: r4(base * 0.028) },
   ]
 
   const specs: CaseSpec[] = [
@@ -337,6 +342,8 @@ async function createCase(spec: CaseSpec, adminId: string, userByBank: Record<st
             interest: new Prisma.Decimal(it.interest),
             penalty: new Prisma.Decimal(it.penalty),
             otherFee: new Prisma.Decimal(it.otherFee),
+            internalPrincipal: new Prisma.Decimal(it.internalPrincipal ?? it.principal),
+            internalInterest: new Prisma.Decimal(it.internalInterest ?? it.interest),
           })),
         },
       },

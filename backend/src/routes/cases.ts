@@ -13,11 +13,14 @@ const createCaseSchema = z.object({
 })
 
 const itemSchema = z.object({
-  claimType: z.enum(['CREDIT_LOAN', 'CREDIT_CARD', 'GUARANTEE', 'OTHER']),
+  claimType: z.enum(['CREDIT_CARD', 'CASH_CARD', 'CREDIT_LOAN', 'GUARANTEE', 'INHERITANCE', 'OTHER']),
   principal: z.number().nonnegative().default(0),
   interest: z.number().nonnegative().default(0),
   penalty: z.number().nonnegative().default(0),
   otherFee: z.number().nonnegative().default(0),
+  // 對內債權（僅本行/稽核可見）
+  internalPrincipal: z.number().nonnegative().default(0),
+  internalInterest: z.number().nonnegative().default(0),
   note: z.string().optional(),
 })
 
@@ -152,6 +155,8 @@ export async function caseRoutes(app: FastifyInstance) {
 
     const participants = c.participants.map((p) => {
       const canSeeThis = !rel.isAdmin && (seeAllItems || p.bankCode === bankCode)
+      // 對內債權（C-1）：僅該行本身或稽核可見，永不對他行揭露
+      const canSeeInternal = !rel.isAdmin && (rel.isAuditor || p.bankCode === bankCode)
       const liveTotal = p.items.reduce((s, it) => s + itemExternalTotal(it), 0)
       return {
         participantId: p.participantId,
@@ -166,6 +171,7 @@ export async function caseRoutes(app: FastifyInstance) {
         // 數字：平台管理員永遠 null
         confirmedClaimAmount: canSeeAmounts ? p.confirmedClaimAmount : null,
         liveTotal: canSeeThis ? liveTotal : null,
+        canSeeInternal,
         items: canSeeThis
           ? p.items.map((it) => ({
               itemId: it.itemId,
@@ -175,6 +181,14 @@ export async function caseRoutes(app: FastifyInstance) {
               penalty: it.penalty,
               otherFee: it.otherFee,
               externalTotal: itemExternalTotal(it),
+              // 對內：僅本行/稽核可見（他行即使揭露後也拿不到）
+              ...(canSeeInternal
+                ? {
+                    internalPrincipal: it.internalPrincipal,
+                    internalInterest: it.internalInterest,
+                    internalTotal: num(it.internalPrincipal) + num(it.internalInterest),
+                  }
+                : {}),
               note: it.note,
             }))
           : null,
@@ -192,6 +206,8 @@ export async function caseRoutes(app: FastifyInstance) {
         status: c.status,
         round: c.round,
         receiptDate: c.receiptDate,
+        mediationDate: c.mediationDate,
+        notifiedDate: c.notifiedDate,
         disclosedAt: c.disclosedAt,
         consolidatedTotal: rel.isAdmin ? null : c.consolidatedTotal,
         outcomeReportedAt: c.outcomeReportedAt,
@@ -286,6 +302,8 @@ export async function caseRoutes(app: FastifyInstance) {
       interest: new Prisma.Decimal(it.interest),
       penalty: new Prisma.Decimal(it.penalty),
       otherFee: new Prisma.Decimal(it.otherFee),
+      internalPrincipal: new Prisma.Decimal(it.internalPrincipal),
+      internalInterest: new Prisma.Decimal(it.internalInterest),
       note: it.note,
     }))
 

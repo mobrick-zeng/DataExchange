@@ -7,9 +7,8 @@ import { Modal } from '@/components/Modal'
 import { TextField } from '@/components/TextField'
 import { SelectField } from '@/components/SelectField'
 import { CLAIM_TYPE_LABELS } from '@/utils/labels'
+import { CLAIM_TYPES } from '@/types/enums'
 import { CASE_STATUS_LABELS, CONFIRM_STATUS_LABELS, money } from './CasesPage'
-
-const CLAIM_TYPES = ['CREDIT_LOAN', 'CREDIT_CARD', 'GUARANTEE', 'OTHER'] as const
 
 interface Item {
   itemId?: string
@@ -19,6 +18,10 @@ interface Item {
   penalty: number | string
   otherFee: number | string
   externalTotal?: string
+  // 對內債權（僅本行/稽核可回傳）
+  internalPrincipal?: number | string
+  internalInterest?: number | string
+  internalTotal?: number | string
   note?: string
 }
 interface Participant {
@@ -33,6 +36,7 @@ interface Participant {
   removalReason: string | null
   confirmedClaimAmount: string | null
   liveTotal: number | null
+  canSeeInternal?: boolean
   items: Item[] | null
 }
 interface Doubt {
@@ -47,7 +51,7 @@ interface CaseDetail {
   case: {
     caseId: string; courtCode: string; courtName: string; docNumber: string
     mainBankCode: string; mainBankName: string; status: string; round: number
-    receiptDate: string | null; disclosedAt: string | null
+    receiptDate: string | null; mediationDate: string | null; notifiedDate: string | null; disclosedAt: string | null
     consolidatedTotal: string | null; outcomeReportedAt: string | null
     notEstablishedReason: string | null; note: string | null
   }
@@ -59,7 +63,17 @@ interface BankOpt { bankCode: string; bankName: string }
 
 const DISCLOSED = ['PENDING_OUTCOME', 'ESTABLISHED', 'NOT_ESTABLISHED']
 const num = (v: number | string | null | undefined) => (v == null ? 0 : Number(v) || 0)
-const emptyItem = (): Item => ({ claimType: 'CREDIT_LOAN', principal: '', interest: '', penalty: '', otherFee: '', note: '' })
+const emptyItem = (): Item => ({ claimType: 'CREDIT_CARD', principal: '', interest: '', penalty: '', otherFee: '', internalPrincipal: '', internalInterest: '', note: '' })
+const fmtDate = (s: string | null | undefined) => (s ? s.slice(0, 10) : '—')
+function Info({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-xs text-slate-500">{label}</dt>
+      <dd className="text-slate-900">{value}</dd>
+    </div>
+  )
+}
+const typeLabel = (t: string) => CLAIM_TYPE_LABELS[t as keyof typeof CLAIM_TYPE_LABELS] ?? t
 
 export function CaseDetailPage() {
   const { caseId } = useParams()
@@ -121,6 +135,8 @@ export function CaseDetailPage() {
       interest: num(i.interest),
       penalty: num(i.penalty),
       otherFee: num(i.otherFee),
+      internalPrincipal: num(i.internalPrincipal),
+      internalInterest: num(i.internalInterest),
       note: i.note || undefined,
     }))
     await act(() => apiFetch(`/api/cases/${caseId}/my-items`, { method: 'PUT', body: JSON.stringify({ items }) }), '本行債權明細已儲存')
@@ -139,26 +155,40 @@ export function CaseDetailPage() {
     setReportEstablished(null); setReportReason(''); setReportAck(false)
   }
 
-  // 債權彙整表（揭露後）：各行四分項加總
-  const consolidated = active.map((p) => {
+  // ---- 債權彙整表（揭露後）聚合：依債權種類 ----
+  type ExtRow = { principal: number; interest: number; penalty: number; otherFee: number; total: number }
+  const zeroExt = { principal: 0, interest: 0, penalty: 0, otherFee: 0 }
+  const withTotal = (r: { principal: number; interest: number; penalty: number; otherFee: number }): ExtRow => ({ ...r, total: r.principal + r.interest + r.penalty + r.otherFee })
+  const sumExtByType = (its: Item[], type: string) =>
+    its.filter((i) => i.claimType === type).reduce(
+      (a, i) => ({ principal: a.principal + num(i.principal), interest: a.interest + num(i.interest), penalty: a.penalty + num(i.penalty), otherFee: a.otherFee + num(i.otherFee) }),
+      { ...zeroExt },
+    )
+  const sumRows = (rows: ExtRow[]) => withTotal(rows.reduce((a, r) => ({ principal: a.principal + r.principal, interest: a.interest + r.interest, penalty: a.penalty + r.penalty, otherFee: a.otherFee + r.otherFee }), { ...zeroExt }))
+
+  const allItems = active.flatMap((p) => p.items ?? [])
+  // 表一：全體債權金融機構（依種類，對外），六類全列
+  const table1 = CLAIM_TYPES.map((t) => ({ type: t as string, ...withTotal(sumExtByType(allItems, t)) }))
+  const table1Total = sumRows(table1)
+  // 表二：各債權銀行（依種類，對外）+ 該行合計
+  const table2 = active.map((p) => {
     const its = p.items ?? []
-    const sum = (k: keyof Item) => its.reduce((s, it) => s + num(it[k] as any), 0)
-    return {
-      bankCode: p.bankCode,
-      bankName: p.bankName,
-      roleInCase: p.roleInCase,
-      principal: sum('principal'),
-      interest: sum('interest'),
-      penalty: sum('penalty'),
-      otherFee: sum('otherFee'),
-      total: num(p.confirmedClaimAmount) || its.reduce((s, it) => s + num(it.principal) + num(it.interest) + num(it.penalty) + num(it.otherFee), 0),
-      hasItems: p.items !== null,
-    }
+    const rows = CLAIM_TYPES.map((t) => ({ type: t as string, ...withTotal(sumExtByType(its, t)) }))
+    return { p, rows, subtotal: sumRows(rows) }
   })
-  const grand = consolidated.reduce(
-    (a, r) => ({ principal: a.principal + r.principal, interest: a.interest + r.interest, penalty: a.penalty + r.penalty, otherFee: a.otherFee + r.otherFee, total: a.total + r.total }),
-    { principal: 0, interest: 0, penalty: 0, otherFee: 0, total: 0 },
-  )
+  // 對內債權（C-1）：僅本行/稽核可見（後端已據此決定 canSeeInternal 與是否回傳 internal*）
+  const internalParts = active.filter((p) => p.canSeeInternal && p.items)
+  const internalTable = internalParts.map((p) => {
+    const its = p.items ?? []
+    const rows = CLAIM_TYPES.map((t) => {
+      const g = its.filter((i) => i.claimType === t)
+      const principal = g.reduce((s, i) => s + num(i.internalPrincipal), 0)
+      const interest = g.reduce((s, i) => s + num(i.internalInterest), 0)
+      return { type: t as string, principal, interest, total: principal + interest }
+    })
+    const subtotal = rows.reduce((a, r) => ({ principal: a.principal + r.principal, interest: a.interest + r.interest, total: a.total + r.total }), { principal: 0, interest: 0, total: 0 })
+    return { p, rows, subtotal }
+  })
 
   return (
     <div className="flex flex-col gap-5 p-4 sm:p-6">
@@ -187,13 +217,22 @@ export function CaseDetailPage() {
         </div>
       )}
 
-      {/* 彙整總額（揭露後、非平台管理員） */}
+      {/* 案件表頭卡（揭露後、非平台管理員）——對齊債權彙整表表頭 */}
       {disclosed && !viewer.isAdmin && (
-        <div className="flex flex-wrap gap-4 rounded-2xl border border-surface-border bg-surface-raised p-4 text-sm shadow-card">
-          <span>全案債權總額 <b className="text-slate-900">{money(c.consolidatedTotal)}</b></span>
-          <span>參與行 <b className="text-slate-900">{active.length}</b></span>
-          {c.disclosedAt && <span>揭露時間 <b className="text-slate-900">{c.disclosedAt.slice(0, 10)}</b></span>}
-        </div>
+        <section className="rounded-2xl border border-surface-border bg-surface-raised p-5 shadow-card">
+          <h2 className="mb-3 text-sm font-semibold text-slate-900">案件表頭</h2>
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
+            <Info label="調解機構" value={`${c.courtName}（${c.courtCode}）`} />
+            <Info label="法院公文文號" value={c.docNumber} />
+            <Info label="最大債權銀行" value={`${c.mainBankName}（${c.mainBankCode}）`} />
+            <Info label="收件日期" value={fmtDate(c.receiptDate)} />
+            <Info label="調解日期" value={fmtDate(c.mediationDate)} />
+            <Info label="通報日期" value={fmtDate(c.notifiedDate)} />
+            <Info label="回報日期" value={fmtDate(c.outcomeReportedAt)} />
+            <Info label="案件狀態" value={`${CASE_STATUS_LABELS[c.status] ?? c.status}（第 ${c.round} 輪）`} />
+            <Info label="全案債權總額" value={money(c.consolidatedTotal)} />
+          </dl>
+        </section>
       )}
 
       {/* 我的操作 */}
@@ -277,43 +316,76 @@ export function CaseDetailPage() {
         {viewer.isAdmin ? (
           <p className="text-sm text-slate-500">平台管理員僅可檢視案件狀態與進度，不開放檢視任何金額。</p>
         ) : disclosed ? (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-sm">
-              <thead>
-                <tr className="text-left text-xs text-slate-500">
-                  <th className="p-2">參與行</th><th className="p-2 text-right">本金</th><th className="p-2 text-right">利息</th>
-                  <th className="p-2 text-right">違約金</th><th className="p-2 text-right">其他費用</th><th className="p-2 text-right">該行債權總額</th>
-                </tr>
-              </thead>
-              <tbody>
-                {consolidated.map((r) => (
-                  <tr key={r.bankCode} className="border-t border-surface-border text-slate-700">
-                    <td className="p-2 text-slate-900">{r.bankName}<span className="ml-1 text-xs text-slate-500">{r.roleInCase === 'MAIN' ? '主辦' : ''}</span></td>
-                    {r.hasItems ? (
-                      <>
+          <div className="flex flex-col gap-6">
+            {/* 表一：全體債權金融機構（依債權種類，對外） */}
+            <div>
+              <p className="mb-2 text-xs font-medium text-slate-500">全體債權金融機構（依債權種類）</p>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[640px] text-sm">
+                  <thead><tr className="text-left text-xs text-slate-500">
+                    <th className="p-2">債權種類</th><th className="p-2 text-right">對外本金</th><th className="p-2 text-right">對外利息</th>
+                    <th className="p-2 text-right">對外違約金</th><th className="p-2 text-right">對外其他費用</th><th className="p-2 text-right">對外總和</th>
+                  </tr></thead>
+                  <tbody>
+                    {table1.map((r) => (
+                      <tr key={r.type} className="border-t border-surface-border text-slate-700">
+                        <td className="p-2 text-slate-900">{typeLabel(r.type)}</td>
                         <td className="p-2 text-right">{money(String(r.principal))}</td>
                         <td className="p-2 text-right">{money(String(r.interest))}</td>
                         <td className="p-2 text-right">{money(String(r.penalty))}</td>
                         <td className="p-2 text-right">{money(String(r.otherFee))}</td>
                         <td className="p-2 text-right font-medium text-slate-900">{money(String(r.total))}</td>
-                      </>
-                    ) : (
-                      <td className="p-2 text-right text-slate-400" colSpan={5}>（不開放檢視）</td>
-                    )}
-                  </tr>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot><tr className="border-t-2 border-surface-border font-semibold text-slate-900">
+                    <td className="p-2">合計</td>
+                    <td className="p-2 text-right">{money(String(table1Total.principal))}</td>
+                    <td className="p-2 text-right">{money(String(table1Total.interest))}</td>
+                    <td className="p-2 text-right">{money(String(table1Total.penalty))}</td>
+                    <td className="p-2 text-right">{money(String(table1Total.otherFee))}</td>
+                    <td className="p-2 text-right">{money(c.consolidatedTotal ?? String(table1Total.total))}</td>
+                  </tr></tfoot>
+                </table>
+              </div>
+            </div>
+            {/* 表二：各債權銀行明細（依債權種類，對外） */}
+            <div>
+              <p className="mb-2 text-xs font-medium text-slate-500">各債權銀行明細（依債權種類）</p>
+              <div className="flex flex-col gap-4">
+                {table2.map(({ p, rows, subtotal }) => (
+                  <div key={p.participantId} className="overflow-x-auto rounded-xl border border-surface-border">
+                    <table className="w-full min-w-[640px] text-sm">
+                      <thead><tr className="bg-surface-muted/40 text-left text-xs text-slate-500">
+                        <th className="p-2">{p.bankName}（{p.bankCode}）{p.roleInCase === 'MAIN' ? '·主辦' : ''}</th>
+                        <th className="p-2 text-right">對外本金</th><th className="p-2 text-right">對外利息</th>
+                        <th className="p-2 text-right">對外違約金</th><th className="p-2 text-right">對外其他費用</th><th className="p-2 text-right">對外總和</th>
+                      </tr></thead>
+                      <tbody>
+                        {rows.map((r) => (
+                          <tr key={r.type} className="border-t border-surface-border text-slate-700">
+                            <td className="p-2">{typeLabel(r.type)}</td>
+                            <td className="p-2 text-right">{money(String(r.principal))}</td>
+                            <td className="p-2 text-right">{money(String(r.interest))}</td>
+                            <td className="p-2 text-right">{money(String(r.penalty))}</td>
+                            <td className="p-2 text-right">{money(String(r.otherFee))}</td>
+                            <td className="p-2 text-right">{money(String(r.total))}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot><tr className="border-t-2 border-surface-border font-semibold text-slate-900">
+                        <td className="p-2">{p.bankCode} 合計</td>
+                        <td className="p-2 text-right">{money(String(subtotal.principal))}</td>
+                        <td className="p-2 text-right">{money(String(subtotal.interest))}</td>
+                        <td className="p-2 text-right">{money(String(subtotal.penalty))}</td>
+                        <td className="p-2 text-right">{money(String(subtotal.otherFee))}</td>
+                        <td className="p-2 text-right">{money(String(subtotal.total))}</td>
+                      </tr></tfoot>
+                    </table>
+                  </div>
                 ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-surface-border font-semibold text-slate-900">
-                  <td className="p-2">總計</td>
-                  <td className="p-2 text-right">{money(String(grand.principal))}</td>
-                  <td className="p-2 text-right">{money(String(grand.interest))}</td>
-                  <td className="p-2 text-right">{money(String(grand.penalty))}</td>
-                  <td className="p-2 text-right">{money(String(grand.otherFee))}</td>
-                  <td className="p-2 text-right">{money(c.consolidatedTotal ?? String(grand.total))}</td>
-                </tr>
-              </tfoot>
-            </table>
+              </div>
+            </div>
           </div>
         ) : (
           <div className="flex flex-col gap-3">
@@ -357,6 +429,42 @@ export function CaseDetailPage() {
         )}
       </section>
 
+      {/* 對內債權（C-1：僅本行/稽核可見，不對他行揭露） */}
+      {disclosed && internalTable.length > 0 && (
+        <section className="rounded-2xl border border-amber-500/40 bg-amber-500/5 p-5 shadow-card">
+          <h2 className="text-sm font-semibold text-slate-900">🔒 {viewer.isAuditor ? '各行對內債權（稽核檢視）' : '本行對內債權'}</h2>
+          <p className="mb-3 text-xs text-amber-700">僅本行內部可見，不對其他債權行揭露（本息＝對內本金＋對內利息）。</p>
+          <div className="flex flex-col gap-4">
+            {internalTable.map(({ p, rows, subtotal }) => (
+              <div key={p.participantId} className="overflow-x-auto rounded-xl border border-surface-border">
+                <table className="w-full min-w-[420px] text-sm">
+                  <thead><tr className="bg-surface-muted/40 text-left text-xs text-slate-500">
+                    <th className="p-2">{p.bankName}（{p.bankCode}）</th>
+                    <th className="p-2 text-right">對內本金</th><th className="p-2 text-right">對內利息</th><th className="p-2 text-right">本息總和</th>
+                  </tr></thead>
+                  <tbody>
+                    {rows.map((r) => (
+                      <tr key={r.type} className="border-t border-surface-border text-slate-700">
+                        <td className="p-2">{typeLabel(r.type)}</td>
+                        <td className="p-2 text-right">{money(String(r.principal))}</td>
+                        <td className="p-2 text-right">{money(String(r.interest))}</td>
+                        <td className="p-2 text-right font-medium text-slate-900">{money(String(r.total))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot><tr className="border-t-2 border-surface-border font-semibold text-slate-900">
+                    <td className="p-2">合計</td>
+                    <td className="p-2 text-right">{money(String(subtotal.principal))}</td>
+                    <td className="p-2 text-right">{money(String(subtotal.interest))}</td>
+                    <td className="p-2 text-right">{money(String(subtotal.total))}</td>
+                  </tr></tfoot>
+                </table>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* 疑義紀錄 */}
       {doubts.length > 0 && (
         <section className="rounded-2xl border border-surface-border bg-surface-raised p-5 shadow-card">
@@ -389,11 +497,21 @@ export function CaseDetailPage() {
         <div className="flex flex-col gap-3">
           {fillItems.map((it, idx) => (
             <div key={idx} className="grid grid-cols-2 gap-2 rounded-xl border border-surface-border p-3 sm:grid-cols-3">
-              <SelectField label="類型" value={it.claimType} options={CLAIM_TYPES.map((t) => ({ value: t, label: CLAIM_TYPE_LABELS[t] }))} onChange={(e) => setFillItems((a) => a.map((x, i) => i === idx ? { ...x, claimType: e.target.value } : x))} />
+              <div className="col-span-full">
+                <SelectField label="債權種類" value={it.claimType} options={CLAIM_TYPES.map((t) => ({ value: t, label: CLAIM_TYPE_LABELS[t] }))} onChange={(e) => setFillItems((a) => a.map((x, i) => i === idx ? { ...x, claimType: e.target.value } : x))} />
+              </div>
+              <div className="col-span-full text-xs font-medium text-slate-500">對外債權（揭露後參與行互見）</div>
               <TextField label="本金" type="number" value={String(it.principal)} onChange={(e) => setFillItems((a) => a.map((x, i) => i === idx ? { ...x, principal: e.target.value } : x))} />
               <TextField label="利息" type="number" value={String(it.interest)} onChange={(e) => setFillItems((a) => a.map((x, i) => i === idx ? { ...x, interest: e.target.value } : x))} />
               <TextField label="違約金" type="number" value={String(it.penalty)} onChange={(e) => setFillItems((a) => a.map((x, i) => i === idx ? { ...x, penalty: e.target.value } : x))} />
               <TextField label="其他費用" type="number" value={String(it.otherFee)} onChange={(e) => setFillItems((a) => a.map((x, i) => i === idx ? { ...x, otherFee: e.target.value } : x))} />
+              <div className="col-span-full mt-1 text-xs font-medium text-amber-700">🔒 對內債權（僅本行內部可見，不對外揭露）</div>
+              <TextField label="對內本金" type="number" value={String(it.internalPrincipal ?? '')} onChange={(e) => setFillItems((a) => a.map((x, i) => i === idx ? { ...x, internalPrincipal: e.target.value } : x))} />
+              <TextField label="對內利息" type="number" value={String(it.internalInterest ?? '')} onChange={(e) => setFillItems((a) => a.map((x, i) => i === idx ? { ...x, internalInterest: e.target.value } : x))} />
+              <div className="flex flex-col justify-end pb-1">
+                <span className="text-xs text-slate-500">本息總和（自動）</span>
+                <span className="text-sm font-medium text-slate-900">{money(String(num(it.internalPrincipal) + num(it.internalInterest)))}</span>
+              </div>
               <button type="button" className="col-span-full text-left text-xs text-rose-600" onClick={() => setFillItems((a) => a.filter((_, i) => i !== idx))}>移除此列</button>
             </div>
           ))}

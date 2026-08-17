@@ -76,10 +76,12 @@ enum CaseBankRole {
 }
 
 enum ClaimType {
-  CREDIT_LOAN
-  CREDIT_CARD
-  GUARANTEE
-  OTHER
+  CREDIT_CARD // 信用卡
+  CASH_CARD // 現金卡
+  CREDIT_LOAN // 信用貸款
+  GUARANTEE // 保證
+  INHERITANCE // 繼承
+  OTHER // 其他
 }
 
 enum NotificationType {
@@ -254,6 +256,8 @@ model Case {
 
   mainBankCode String // 最大債權行（主辦）；名單來源＝法院公文，系統不驗證完整性
   receiptDate  DateTime? // 收到公文日（informational）
+  mediationDate DateTime? // 調解日期（informational）
+  notifiedDate  DateTime? // 通報日期（保留欄位，語意暫定、可空）
   status       CaseStatus @default(DRAFT)
 
   // 揭露／輪次（每次因疑義退回重新揭露 round+1）
@@ -326,11 +330,14 @@ model CreditItem {
   itemId        String    @id @default(cuid())
   participantId String
   claimType     ClaimType
-  principal     Decimal   @default(0) @db.Decimal(21, 4) // 本金
-  interest      Decimal   @default(0) @db.Decimal(21, 4) // 利息
-  penalty       Decimal   @default(0) @db.Decimal(21, 4) // 違約金
-  otherFee      Decimal   @default(0) @db.Decimal(21, 4) // 其他費用
+  principal     Decimal   @default(0) @db.Decimal(21, 4) // 對外本金
+  interest      Decimal   @default(0) @db.Decimal(21, 4) // 對外利息
+  penalty       Decimal   @default(0) @db.Decimal(21, 4) // 對外違約金
+  otherFee      Decimal   @default(0) @db.Decimal(21, 4) // 對外其他費用
   // externalTotal = principal+interest+penalty+otherFee（讀取即算，不落地）
+  // 對內債權（僅本行/稽核可見，不對他行揭露）；internalTotal = internalPrincipal+internalInterest（即算）
+  internalPrincipal Decimal @default(0) @db.Decimal(21, 4) // 對內本金
+  internalInterest  Decimal @default(0) @db.Decimal(21, 4) // 對內利息
   note          String?
 
   participant CaseParticipantBank @relation(fields: [participantId], references: [participantId], onDelete: Cascade)

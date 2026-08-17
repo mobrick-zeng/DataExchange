@@ -37,10 +37,10 @@ export type ParticipantConfirmationStatus =
 /** 案件中銀行的角色（對應後端 CaseBankRole） */
 export type CaseBankRole = 'MAIN' | 'CO_BANK'
 
-/** 債權種類（對應後端 ClaimType） */
-export type ClaimType = 'CREDIT_LOAN' | 'CREDIT_CARD' | 'GUARANTEE' | 'OTHER'
+/** 債權種類（對應後端 ClaimType，v0.35：6 類，對齊債權彙整表） */
+export type ClaimType = 'CREDIT_CARD' | 'CASH_CARD' | 'CREDIT_LOAN' | 'GUARANTEE' | 'INHERITANCE' | 'OTHER'
 
-export const CLAIM_TYPES: ClaimType[] = ['CREDIT_LOAN', 'CREDIT_CARD', 'GUARANTEE', 'OTHER']
+export const CLAIM_TYPES: ClaimType[] = ['CREDIT_CARD', 'CASH_CARD', 'CREDIT_LOAN', 'GUARANTEE', 'INHERITANCE', 'OTHER']
 
 /** 帳號審核歷程 action（對應後端 ApprovalAction） */
 export type ApprovalAction =

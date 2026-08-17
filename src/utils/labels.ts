@@ -35,8 +35,10 @@ export const ACCOUNT_STATUS_BADGE_CLASS: Record<AccountStatus, string> = {
 }
 
 export const CLAIM_TYPE_LABELS: Record<ClaimType, string> = {
-  CREDIT_LOAN: '信貸',
   CREDIT_CARD: '信用卡',
+  CASH_CARD: '現金卡',
+  CREDIT_LOAN: '信用貸款',
   GUARANTEE: '保證',
+  INHERITANCE: '繼承',
   OTHER: '其他',
 }
