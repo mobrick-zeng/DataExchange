@@ -30,9 +30,9 @@ export function Modal({ open, onClose, title, children, footer, widthClassName =
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
-        className={`relative w-full ${widthClassName} rounded-2xl border border-surface-border bg-surface-raised p-6 shadow-card`}
+        className={`relative flex max-h-[calc(100vh-2rem)] w-full flex-col overflow-hidden ${widthClassName} rounded-2xl border border-surface-border bg-surface-raised p-6 shadow-card`}
       >
-        <div className="mb-4 flex items-start justify-between gap-4">
+        <div className="mb-4 flex shrink-0 items-start justify-between gap-4">
           <h2 id="modal-title" className="text-lg font-semibold text-slate-900">
             {title}
           </h2>
@@ -45,8 +45,8 @@ export function Modal({ open, onClose, title, children, footer, widthClassName =
             ✕
           </button>
         </div>
-        <div className="text-sm text-slate-700">{children}</div>
-        {footer && <div className="mt-6 flex justify-end gap-3">{footer}</div>}
+        <div className="min-h-0 flex-1 overflow-y-auto text-sm text-slate-700">{children}</div>
+        {footer && <div className="mt-6 flex shrink-0 justify-end gap-3">{footer}</div>}
       </div>
     </div>,
     document.body,
