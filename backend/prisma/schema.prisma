@@ -114,6 +114,7 @@ enum AuditActionType {
   // ---- 案件流程（v0.3）----
   CASE_CREATED
   CASE_UPDATED
+  CASE_DELETED // 刪除草稿案件（僅 DRAFT、僅主辦）
   PARTICIPANT_INVITED
   PARTICIPANT_REMOVED
   PARTICIPATION_REJECTED
@@ -256,7 +257,10 @@ model Case {
 
   mainBankCode String // 最大債權行（主辦）；名單來源＝法院公文，系統不驗證完整性
   receiptDate  DateTime? // 收到公文日（informational）
-  mediationDate DateTime? // 調解日期（informational）
+  mediationDate DateTime? // 調解日期／庭期（informational）
+  mediationTime String?   // 調解時間，24 小時制 "HH:mm"（上午／下午由顯示端推導，避免重複來源與時區歧義）
+  mediationPlace String?  // 調解地點（現為自由文字；是否改下拉需地點主檔，待客戶確認）
+  interestCutoffDate DateTime? // 利息及違約金計算截止日（僅儲存，尚不自動計算）
   notifiedDate  DateTime? // 通報日期（保留欄位，語意暫定、可空）
   status       CaseStatus @default(DRAFT)
 

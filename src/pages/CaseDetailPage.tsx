@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useToast } from '@/hooks/useToast'
 import { apiFetch } from '@/services/api'
 import { Button } from '@/components/Button'
@@ -53,7 +53,9 @@ interface CaseDetail {
   case: {
     caseId: string; courtCode: string; courtName: string; docNumber: string
     mainBankCode: string; mainBankName: string; status: string; round: number
-    receiptDate: string | null; mediationDate: string | null; notifiedDate: string | null; disclosedAt: string | null
+    receiptDate: string | null; mediationDate: string | null; mediationTime: string | null
+    mediationPlace: string | null; interestCutoffDate: string | null
+    notifiedDate: string | null; disclosedAt: string | null
     consolidatedTotal: string | null; outcomeReportedAt: string | null
     notEstablishedReason: string | null; note: string | null
   }
@@ -106,10 +108,29 @@ function Info({ label, value }: { label: string; value: string }) {
     </div>
   )
 }
+/** 調解時間（24h HH:mm）→ 上午／下午顯示 */
+function fmtMediationTime(t: string | null | undefined): string {
+  if (!t) return ''
+  const [hh, mm] = t.split(':').map(Number)
+  if (isNaN(hh) || isNaN(mm)) return t
+  const ampm = hh < 12 ? '上午' : '下午'
+  const h12 = hh % 12 === 0 ? 12 : hh % 12
+  return `${ampm} ${h12}:${String(mm).padStart(2, '0')}`
+}
+/** 距庭期天數（今天為 0；已過為負） */
+function daysUntil(dateStr: string | null | undefined): number | null {
+  if (!dateStr) return null
+  const d = new Date(dateStr.slice(0, 10) + 'T00:00:00')
+  if (isNaN(d.getTime())) return null
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  return Math.round((d.getTime() - today.getTime()) / 86400000)
+}
+
 const typeLabel = (t: string) => CLAIM_TYPE_LABELS[t as keyof typeof CLAIM_TYPE_LABELS] ?? t
 
 export function CaseDetailPage() {
   const { caseId } = useParams()
+  const navigate = useNavigate()
   const toast = useToast()
   const [data, setData] = useState<CaseDetail | null>(null)
   const [banks, setBanks] = useState<BankOpt[]>([])
@@ -125,6 +146,7 @@ export function CaseDetailPage() {
   const [doubtPointer, setDoubtPointer] = useState('')
   const [removeTarget, setRemoveTarget] = useState<{ bankCode: string; bankName: string } | null>(null)
   const [removeReason, setRemoveReason] = useState('')
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const [discloseOpen, setDiscloseOpen] = useState(false)
   const [discloseAck, setDiscloseAck] = useState(false)
   const [fillFromExisting, setFillFromExisting] = useState(false)
@@ -267,8 +289,33 @@ export function CaseDetailPage() {
             {c.receiptDate && <span className="ml-2">收文日 {c.receiptDate.slice(0, 10)}</span>}
           </p>
         </div>
-        <span className="rounded-full bg-brand-600/10 px-3 py-1 text-sm font-medium text-brand-700">{CASE_STATUS_LABELS[c.status] ?? c.status}</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-brand-600/10 px-3 py-1 text-sm font-medium text-brand-700">{CASE_STATUS_LABELS[c.status] ?? c.status}</span>
+          {isMain && !terminal && (
+            <Link to={`/cases/${caseId}/edit`}>
+              <Button size="sm" variant="secondary">異動案件</Button>
+            </Link>
+          )}
+          {isMain && c.status === 'DRAFT' && (
+            <Button size="sm" variant="danger" onClick={() => setDeleteOpen(true)}>刪除草稿</Button>
+          )}
+        </div>
       </div>
+
+      {/* 調解庭期提示：庭期在即但本行尚未完成申報確認 */}
+      {(() => {
+        const dLeft = daysUntil(c.mediationDate)
+        if (dLeft == null || !myPart || terminal) return null
+        if (myPart.confirmationStatus === 'CONFIRMED') return null
+        if (dLeft < 0 || dLeft > 14) return null
+        return (
+          <div className={`rounded-xl border px-4 py-3 text-sm ${dLeft <= 3 ? 'border-rose-500/40 bg-rose-500/10 text-rose-700' : 'border-amber-500/40 bg-amber-500/10 text-amber-800'}`}>
+            ⏰ 本案<b>調解庭期為 {fmtDate(c.mediationDate)}</b>
+            {c.mediationTime && <>（{fmtMediationTime(c.mediationTime)}）</>}
+            ，{dLeft === 0 ? <b>就是今天</b> : <>還剩 <b>{dLeft} 天</b></>}，而<b>本行尚未完成申報確認</b>，請儘速處理。
+          </div>
+        )
+      })()}
 
       {/* 終態橫幅 */}
       {c.status === 'ESTABLISHED' && (
@@ -291,7 +338,9 @@ export function CaseDetailPage() {
             <Info label="法院公文文號" value={c.docNumber} />
             <Info label="最大債權銀行" value={`${c.mainBankName}（${c.mainBankCode}）`} />
             <Info label="收件日期" value={fmtDate(c.receiptDate)} />
-            <Info label="調解日期" value={fmtDate(c.mediationDate)} />
+            <Info label="調解日期" value={`${fmtDate(c.mediationDate)}${c.mediationTime ? ` ${fmtMediationTime(c.mediationTime)}` : ''}`} />
+            <Info label="調解地點" value={c.mediationPlace || '—'} />
+            <Info label="利息／違約金計算截止日" value={fmtDate(c.interestCutoffDate)} />
             <Info label="通報日期" value={fmtDate(c.notifiedDate)} />
             <Info label="回報日期" value={fmtDate(c.outcomeReportedAt)} />
             <Info label="案件狀態" value={`${CASE_STATUS_LABELS[c.status] ?? c.status}（第 ${c.round} 輪）`} />
@@ -626,6 +675,24 @@ export function CaseDetailPage() {
           <TextField label="疑義理由 *" value={doubtReason} onChange={(e) => setDoubtReason(e.target.value)} placeholder="請說明有疑義之處" />
           <SelectField label="指向某參與行（選填）" placeholder="不指定" value={doubtPointer} onChange={(e) => setDoubtPointer(e.target.value)} options={active.map((p) => ({ value: p.bankCode, label: p.bankName }))} />
           <p className="text-xs text-slate-500">送出後案件退回封閉申報，全員確認狀態全部重置，需再次全員確認。</p>
+        </div>
+      </Modal>
+
+      <Modal open={deleteOpen} onClose={() => setDeleteOpen(false)} title="刪除草稿案件" widthClassName="max-w-md"
+        footer={<><Button variant="secondary" onClick={() => setDeleteOpen(false)}>取消</Button>
+          <Button variant="danger" onClick={async () => {
+            try {
+              await apiFetch(`/api/cases/${caseId}`, { method: 'DELETE' })
+              toast.success('草稿已刪除')
+              navigate('/cases', { replace: true })
+            } catch (e) { toast.error((e as Error).message) }
+          }}>確認刪除</Button></>}>
+        <div className="flex flex-col gap-2 text-sm text-slate-700">
+          <p>即將刪除草稿案件 <b>{c.docNumber}</b>（{c.courtName}）。</p>
+          <p className="text-xs text-slate-500">
+            僅「草稿」可刪除（尚未發布，其他債權行未曾看到本案）。刪除後<b>該法院＋文號可重新建立</b>，適用於文號誤植的更正；
+            刪除事件會留存稽核軌跡。
+          </p>
         </div>
       </Modal>
 

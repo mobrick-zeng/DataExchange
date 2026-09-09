@@ -17,6 +17,7 @@ interface CaseRow {
   mainBankName: string
   status: string
   receiptDate: string | null
+  mediationDate: string | null
   updatedAt: string
   consolidatedTotal: string | null
   participantCount: number
@@ -53,6 +54,15 @@ export function money(v: string | null | undefined): string {
 }
 
 const fmtDate = (s: string | null | undefined) => (s ? s.slice(0, 10) : '—')
+
+/** 距調解庭期天數（今天為 0；已過為負；無庭期為 null） */
+function daysUntil(dateStr: string | null | undefined): number | null {
+  if (!dateStr) return null
+  const d = new Date(dateStr.slice(0, 10) + 'T00:00:00')
+  if (isNaN(d.getTime())) return null
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  return Math.round((d.getTime() - today.getTime()) / 86400000)
+}
 
 /** 搜尋字串刻意不放 URL（避免寫入存取日誌／瀏覽器紀錄），改存本分頁的 sessionStorage。 */
 const Q_KEY = 'cases.q'
@@ -305,6 +315,19 @@ export function CasesPage() {
                       </td>
                       <td className="p-3">
                         <Link to={`/cases/${c.caseId}`} className="font-medium text-brand-700 hover:underline">{c.docNumber}</Link>
+                        {(() => {
+                          // 庭期在 14 天內且本行尚未確認 → 標記提醒（≤3 天轉紅）
+                          const dLeft = daysUntil(c.mediationDate)
+                          if (dLeft == null || dLeft < 0 || dLeft > 14) return null
+                          if (c.myConfirmationStatus !== 'PENDING') return null
+                          return (
+                            <span className={`ml-2 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                              dLeft <= 3 ? 'bg-rose-500/15 text-rose-700' : 'bg-amber-500/15 text-amber-700'
+                            }`} title={`調解庭期 ${fmtDate(c.mediationDate)}，本行尚未確認`}>
+                              ⏰ {dLeft === 0 ? '庭期今天' : `庭期還剩 ${dLeft} 天`}
+                            </span>
+                          )
+                        })()}
                       </td>
                       <td className="p-3 text-slate-900">{c.courtName}</td>
                       <td className="p-3 text-slate-700">{c.mainBankName}</td>

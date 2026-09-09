@@ -7,10 +7,43 @@ import { notifyBankUsers } from '../lib/notify.js'
 
 const createCaseSchema = z.object({
   courtCode: z.string().min(1),
-  docNumber: z.string().min(1),
+  docNumber: z.string().min(1).max(100),
   receiptDate: z.string().optional(),
-  note: z.string().optional(),
+  mediationDate: z.string().optional(),
+  mediationTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, { message: '調解時間格式須為 HH:mm' }).optional(),
+  mediationPlace: z.string().max(200).optional(),
+  interestCutoffDate: z.string().optional(),
+  note: z.string().max(500).optional(),
 })
+
+/** 可異動欄位分兩層：識別欄位僅草稿可改；資訊欄位於非終態皆可由主辦補填／更正。 */
+const updateCaseSchema = z.object({
+  // 識別欄位（影響業務唯一鍵）→ 僅 DRAFT
+  courtCode: z.string().min(1).optional(),
+  docNumber: z.string().min(1).max(100).optional(),
+  // 資訊欄位 → 非終態皆可改；null 代表清空
+  receiptDate: z.string().nullish(),
+  mediationDate: z.string().nullish(),
+  mediationTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, { message: '調解時間格式須為 HH:mm' }).nullish(),
+  mediationPlace: z.string().max(200).nullish(),
+  interestCutoffDate: z.string().nullish(),
+  note: z.string().max(500).nullish(),
+})
+
+/**
+ * 收文日檢核（玉山建議 14）：不得晚於今日，且須在一年內，避免誤選極端值。
+ * 回傳錯誤訊息，通過則回 null。
+ */
+function checkReceiptDate(v?: string | null): string | null {
+  if (!v) return null
+  const d = new Date(v)
+  if (isNaN(d.getTime())) return '收文日格式不正確'
+  const today = new Date(); today.setHours(23, 59, 59, 999)
+  if (d > today) return '收文日不得晚於今日'
+  const oneYearAgo = new Date(); oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
+  if (d < oneYearAgo) return '收文日僅容許一年內，請確認是否誤填'
+  return null
+}
 
 // 金額上限：最多 9 位數（非無限大），避免誤輸極端值
 const MAX_AMOUNT = 999_999_999
@@ -99,7 +132,7 @@ const caseQuerySchema = z.object({
 function mapCaseRow(
   c: {
     caseId: string; courtCode: string; docNumber: string; mainBankCode: string; status: string
-    consolidatedTotal: Prisma.Decimal | null; receiptDate: Date | null; updatedAt: Date
+    consolidatedTotal: Prisma.Decimal | null; receiptDate: Date | null; mediationDate: Date | null; updatedAt: Date
     court: { courtName: string }; mainBank: { bankName: string }
     participants: { bankCode: string; roleInCase: string; confirmationStatus: string; removedAt: Date | null }[]
   },
@@ -117,6 +150,7 @@ function mapCaseRow(
     mainBankName: c.mainBank.bankName,
     status: c.status,
     receiptDate: c.receiptDate,
+    mediationDate: c.mediationDate,
     updatedAt: c.updatedAt,
     // 平台管理員不見金額
     consolidatedTotal: role === 'ADMIN' ? null : c.consolidatedTotal,
@@ -238,6 +272,9 @@ export async function caseRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ message: '輸入格式不正確', issues: parsed.error.issues })
     const b = parsed.data
 
+    const badDate = checkReceiptDate(b.receiptDate)
+    if (badDate) return reply.code(400).send({ message: badDate })
+
     const court = await prisma.court.findUnique({ where: { courtCode: b.courtCode } })
     if (!court || !court.isActive) return reply.code(400).send({ message: '法院不存在或未啟用' })
 
@@ -251,6 +288,10 @@ export async function caseRoutes(app: FastifyInstance) {
           docNumber: b.docNumber,
           mainBankCode: bankCode,
           receiptDate: d(b.receiptDate),
+          mediationDate: d(b.mediationDate),
+          mediationTime: b.mediationTime,
+          mediationPlace: b.mediationPlace,
+          interestCutoffDate: d(b.interestCutoffDate),
           note: b.note,
           status: 'DRAFT',
           createdBy: userId,
@@ -265,6 +306,81 @@ export async function caseRoutes(app: FastifyInstance) {
 
     await writeAudit({ actionType: 'CASE_CREATED', userId, bankCode, targetType: 'CASE', targetId: created.caseId, req })
     return { caseId: created.caseId }
+  })
+
+  // PATCH /api/cases/:caseId — 主辦異動案件（識別欄位僅草稿可改；資訊欄位非終態皆可）
+  app.patch('/:caseId', async (req: FastifyRequest<{ Params: { caseId: string } }>, reply) => {
+    const { caseId } = req.params
+    const { bankCode, userId } = req.user
+    const c = await prisma.case.findUnique({ where: { caseId } })
+    if (!c) return reply.code(404).send({ message: '找不到案件' })
+    if (c.mainBankCode !== bankCode) return reply.code(403).send({ message: '僅主辦（最大債權行）可異動案件' })
+    if (isTerminal(c.status)) return reply.code(409).send({ message: '案件已結案（終態），不可異動' })
+
+    const parsed = updateCaseSchema.safeParse(req.body ?? {})
+    if (!parsed.success) {
+      const first = parsed.error.issues[0]
+      return reply.code(400).send({ message: first?.message ?? '輸入格式不正確', issues: parsed.error.issues })
+    }
+    const b = parsed.data
+
+    // 識別欄位僅草稿可改
+    const identityChange =
+      (b.courtCode != null && b.courtCode !== c.courtCode) || (b.docNumber != null && b.docNumber !== c.docNumber)
+    if (identityChange && c.status !== 'DRAFT') {
+      return reply.code(409).send({ message: '案件已發布，法院與公文文號不可再變更（如需更正請以疑義流程處理）' })
+    }
+    if (identityChange) {
+      const nextCourt = b.courtCode ?? c.courtCode
+      const nextDoc = b.docNumber ?? c.docNumber
+      const court = await prisma.court.findUnique({ where: { courtCode: nextCourt } })
+      if (!court || !court.isActive) return reply.code(400).send({ message: '法院不存在或未啟用' })
+      const dup = await prisma.case.findUnique({ where: { courtCode_docNumber: { courtCode: nextCourt, docNumber: nextDoc } } })
+      if (dup && dup.caseId !== caseId) return reply.code(409).send({ message: '此法院＋公文文號已建立過案件' })
+    }
+    if (b.receiptDate !== undefined) {
+      const badDate = checkReceiptDate(b.receiptDate)
+      if (badDate) return reply.code(400).send({ message: badDate })
+    }
+
+    // 只寫入本次確實有帶的欄位；null 代表清空
+    const data: Prisma.CaseUpdateInput = {}
+    if (identityChange) {
+      if (b.courtCode != null) data.court = { connect: { courtCode: b.courtCode } }
+      if (b.docNumber != null) data.docNumber = b.docNumber
+    }
+    if (b.receiptDate !== undefined) data.receiptDate = b.receiptDate ? new Date(b.receiptDate) : null
+    if (b.mediationDate !== undefined) data.mediationDate = b.mediationDate ? new Date(b.mediationDate) : null
+    if (b.mediationTime !== undefined) data.mediationTime = b.mediationTime ?? null
+    if (b.mediationPlace !== undefined) data.mediationPlace = b.mediationPlace ?? null
+    if (b.interestCutoffDate !== undefined) data.interestCutoffDate = b.interestCutoffDate ? new Date(b.interestCutoffDate) : null
+    if (b.note !== undefined) data.note = b.note ?? null
+    if (Object.keys(data).length === 0) return { ok: true, changed: false }
+
+    await prisma.case.update({ where: { caseId }, data })
+    await writeAudit({
+      actionType: 'CASE_UPDATED', userId, bankCode, targetType: 'CASE', targetId: caseId,
+      detail: `更新欄位：${Object.keys(data).join(', ')}`, req,
+    })
+    return { ok: true, changed: true }
+  })
+
+  // DELETE /api/cases/:caseId — 刪除草稿（僅主辦、僅 DRAFT；文號誤植的救援途徑）
+  app.delete('/:caseId', async (req: FastifyRequest<{ Params: { caseId: string } }>, reply) => {
+    const { caseId } = req.params
+    const { bankCode, userId } = req.user
+    const c = await prisma.case.findUnique({ where: { caseId } })
+    if (!c) return reply.code(404).send({ message: '找不到案件' })
+    if (c.mainBankCode !== bankCode) return reply.code(403).send({ message: '僅主辦（最大債權行）可刪除案件' })
+    if (c.status !== 'DRAFT') return reply.code(409).send({ message: '僅「草稿」案件可刪除；已發布案件請改以回報不成立結案' })
+
+    // 先寫稽核再刪除（刪除後 targetId 不再存在，故於 detail 保留法院＋文號可追溯）
+    await writeAudit({
+      actionType: 'CASE_DELETED', userId, bankCode, targetType: 'CASE', targetId: caseId,
+      detail: `刪除草稿：${c.courtCode} / ${c.docNumber}`, req,
+    })
+    await prisma.case.delete({ where: { caseId } }) // participants／items／snapshots 由 onDelete: Cascade 連帶刪除
+    return { ok: true }
   })
 
   // GET /api/cases/:caseId — 案件詳情（套用可視範圍）
@@ -347,6 +463,9 @@ export async function caseRoutes(app: FastifyInstance) {
         round: c.round,
         receiptDate: c.receiptDate,
         mediationDate: c.mediationDate,
+        mediationTime: c.mediationTime,
+        mediationPlace: c.mediationPlace,
+        interestCutoffDate: c.interestCutoffDate,
         notifiedDate: c.notifiedDate,
         disclosedAt: c.disclosedAt,
         consolidatedTotal: rel.isAdmin ? null : c.consolidatedTotal,
