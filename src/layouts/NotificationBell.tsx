@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '@/services/api'
 import { formatDateTime } from '@/utils/datetime'
 
@@ -7,6 +8,8 @@ interface Notification {
   message: string
   isRead: boolean
   createdAt: string
+  /** 關聯案件；有值時點擊通知可直接導回該案件詳情 */
+  relatedCaseId?: string | null
 }
 
 /** 通知鈴鐺：讀取後端通知，顯示未讀數與最新通知，可標記已讀。 */
@@ -15,6 +18,7 @@ export function NotificationBell() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const ref = useRef<HTMLDivElement>(null)
+  const navigate = useNavigate()
 
   const load = useCallback(() => {
     apiFetch<{ notifications: Notification[]; unreadCount: number }>('/api/notifications')
@@ -41,6 +45,14 @@ export function NotificationBell() {
 
   const markRead = async (id: string) => {
     try { await apiFetch(`/api/notifications/${id}/read`, { method: 'POST' }); load() } catch { /* ignore */ }
+  }
+  /** 點擊通知：標記已讀，並在有關聯案件時直接導回該案件詳情 */
+  const openNotification = async (n: Notification) => {
+    await markRead(n.notificationId)
+    if (n.relatedCaseId) {
+      setOpen(false)
+      navigate(`/cases/${n.relatedCaseId}`)
+    }
   }
   const markAll = async () => {
     try { await apiFetch('/api/notifications/read-all', { method: 'POST' }); load() } catch { /* ignore */ }
@@ -79,11 +91,14 @@ export function NotificationBell() {
                 <button
                   key={n.notificationId}
                   type="button"
-                  onClick={() => markRead(n.notificationId)}
+                  onClick={() => openNotification(n)}
                   className={`w-full rounded-xl border px-3 py-2 text-left text-sm transition-colors ${n.isRead ? 'border-surface-border bg-surface-muted/20 text-slate-500' : 'border-brand-500/30 bg-brand-500/10 text-slate-900'}`}
                 >
                   <p className="text-slate-900">{n.message}</p>
-                  <p className="mt-1 text-[11px] text-slate-500">{formatDateTime(n.createdAt)}</p>
+                  <div className="mt-1 flex items-center justify-between gap-2">
+                    <p className="text-[11px] text-slate-500">{formatDateTime(n.createdAt)}</p>
+                    {n.relatedCaseId && <span className="text-[11px] font-medium text-brand-700">前往案件 →</span>}
+                  </div>
                 </button>
               ))}
             </div>

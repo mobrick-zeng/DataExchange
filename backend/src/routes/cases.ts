@@ -12,16 +12,50 @@ const createCaseSchema = z.object({
   note: z.string().optional(),
 })
 
-const itemSchema = z.object({
-  claimType: z.enum(['CREDIT_CARD', 'CASH_CARD', 'CREDIT_LOAN', 'GUARANTEE', 'INHERITANCE', 'OTHER']),
-  principal: z.number().nonnegative().default(0),
-  interest: z.number().nonnegative().default(0),
-  penalty: z.number().nonnegative().default(0),
-  otherFee: z.number().nonnegative().default(0),
-  // 對內債權（僅本行/稽核可見）
-  internalPrincipal: z.number().nonnegative().default(0),
-  internalInterest: z.number().nonnegative().default(0),
-  note: z.string().optional(),
+// 金額上限：最多 9 位數（非無限大），避免誤輸極端值
+const MAX_AMOUNT = 999_999_999
+const amount = () => z.number().nonnegative().max(MAX_AMOUNT, { message: `金額不得超過 ${MAX_AMOUNT}（9 位數）` }).default(0)
+
+const itemSchema = z
+  .object({
+    claimType: z.enum(['CREDIT_CARD', 'CASH_CARD', 'CREDIT_LOAN', 'GUARANTEE', 'INHERITANCE', 'OTHER']),
+    // 債權種類為「其他」時，需填寫債權內容（如：勞工紓困貸款）
+    claimTypeOther: z.string().trim().max(100).optional(),
+    principal: amount(),
+    interest: amount(),
+    penalty: amount(),
+    otherFee: amount(),
+    // 對內債權（僅本行/稽核可見）
+    internalPrincipal: amount(),
+    internalInterest: amount(),
+    note: z.string().optional(),
+  })
+  // 防呆：對內不得大於對外
+  .refine((it) => it.internalPrincipal <= it.principal, {
+    message: '對內本金不得大於對外本金',
+    path: ['internalPrincipal'],
+  })
+  .refine((it) => it.internalInterest <= it.interest, {
+    message: '對內利息不得大於對外利息',
+    path: ['internalInterest'],
+  })
+  // 防呆：違約金不得大於本金＋利息
+  .refine((it) => it.penalty <= it.principal + it.interest, {
+    message: '違約金不得大於本金＋利息',
+    path: ['penalty'],
+  })
+  // 「其他」必須說明債權內容
+  .refine((it) => it.claimType !== 'OTHER' || !!it.claimTypeOther, {
+    message: '債權種類為「其他」時，請填寫債權內容',
+    path: ['claimTypeOther'],
+  })
+
+// 一類一筆：同一次申報內，同一債權種類不得重複（同類金額請該行自行合計）
+const myItemsSchema = z.object({
+  items: z.array(itemSchema).refine(
+    (arr) => new Set(arr.map((it) => it.claimType)).size === arr.length,
+    { message: '同一債權種類僅能填報一列，請將同類金額合計後填報' },
+  ),
 })
 
 function d(s?: string): Date | undefined {
@@ -176,6 +210,7 @@ export async function caseRoutes(app: FastifyInstance) {
           ? p.items.map((it) => ({
               itemId: it.itemId,
               claimType: it.claimType,
+              claimTypeOther: it.claimTypeOther,
               principal: it.principal,
               interest: it.interest,
               penalty: it.penalty,
@@ -283,8 +318,12 @@ export async function caseRoutes(app: FastifyInstance) {
   app.put('/:caseId/my-items', async (req: FastifyRequest<{ Params: { caseId: string } }>, reply) => {
     const { caseId } = req.params
     const { bankCode, userId } = req.user
-    const parsed = z.object({ items: z.array(itemSchema) }).safeParse(req.body)
-    if (!parsed.success) return reply.code(400).send({ message: '輸入格式不正確', issues: parsed.error.issues })
+    const parsed = myItemsSchema.safeParse(req.body)
+    if (!parsed.success) {
+      // 回傳第一個具體訊息，讓前端能直接顯示；issues 內含 path 供標紅對應列/欄
+      const first = parsed.error.issues[0]
+      return reply.code(400).send({ message: first?.message ?? '輸入格式不正確', issues: parsed.error.issues })
+    }
 
     const c = await prisma.case.findUnique({ where: { caseId } })
     if (!c) return reply.code(404).send({ message: '找不到案件' })
@@ -304,6 +343,7 @@ export async function caseRoutes(app: FastifyInstance) {
       otherFee: new Prisma.Decimal(it.otherFee),
       internalPrincipal: new Prisma.Decimal(it.internalPrincipal),
       internalInterest: new Prisma.Decimal(it.internalInterest),
+      claimTypeOther: it.claimType === 'OTHER' ? it.claimTypeOther : null,
       note: it.note,
     }))
 

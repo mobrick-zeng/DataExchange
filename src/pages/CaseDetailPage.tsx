@@ -13,6 +13,8 @@ import { CASE_STATUS_LABELS, CONFIRM_STATUS_LABELS, money } from './CasesPage'
 interface Item {
   itemId?: string
   claimType: string
+  /** 債權種類為「其他」時的債權內容 */
+  claimTypeOther?: string | null
   principal: number | string
   interest: number | string
   penalty: number | string
@@ -63,7 +65,38 @@ interface BankOpt { bankCode: string; bankName: string }
 
 const DISCLOSED = ['PENDING_OUTCOME', 'ESTABLISHED', 'NOT_ESTABLISHED']
 const num = (v: number | string | null | undefined) => (v == null ? 0 : Number(v) || 0)
-const emptyItem = (): Item => ({ claimType: 'CREDIT_CARD', principal: '', interest: '', penalty: '', otherFee: '', internalPrincipal: '', internalInterest: '', note: '' })
+/** 金額上限：最多 9 位數（與後端一致） */
+const MAX_AMOUNT = 999_999_999
+const emptyItem = (claimType = 'CREDIT_CARD'): Item => ({ claimType, principal: '', interest: '', penalty: '', otherFee: '', internalPrincipal: '', internalInterest: '', claimTypeOther: '', note: '' })
+
+/**
+ * 前端填報防呆（與後端 itemSchema 規則一致；後端仍會再驗一次）
+ * 回傳第一個錯誤訊息，無錯則回 null。
+ */
+function validateItems(items: Item[]): string | null {
+  if (items.length === 0) return '請至少填報一列債權'
+  const seen = new Set<string>()
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i]
+    const n = i + 1
+    if (seen.has(it.claimType)) return `第 ${n} 列：同一債權種類僅能填報一列，請將同類金額合計後填報`
+    seen.add(it.claimType)
+
+    const fields: [string, number][] = [
+      ['本金', num(it.principal)], ['利息', num(it.interest)], ['違約金', num(it.penalty)], ['其他費用', num(it.otherFee)],
+      ['對內本金', num(it.internalPrincipal)], ['對內利息', num(it.internalInterest)],
+    ]
+    for (const [label, v] of fields) {
+      if (v < 0) return `第 ${n} 列「${label}」不得為負值`
+      if (v > MAX_AMOUNT) return `第 ${n} 列「${label}」不得超過 ${MAX_AMOUNT.toLocaleString()}（9 位數）`
+    }
+    if (num(it.internalPrincipal) > num(it.principal)) return `第 ${n} 列：對內本金不得大於對外本金`
+    if (num(it.internalInterest) > num(it.interest)) return `第 ${n} 列：對內利息不得大於對外利息`
+    if (num(it.penalty) > num(it.principal) + num(it.interest)) return `第 ${n} 列：違約金不得大於本金＋利息`
+    if (it.claimType === 'OTHER' && !String(it.claimTypeOther ?? '').trim()) return `第 ${n} 列：債權種類為「其他」時，請填寫債權內容`
+  }
+  return null
+}
 const fmtDate = (s: string | null | undefined) => (s ? s.slice(0, 10) : '—')
 function Info({ label, value }: { label: string; value: string }) {
   return (
@@ -129,8 +162,12 @@ export function CaseDetailPage() {
     setFillOpen(true)
   }
   const saveFill = async () => {
+    // 送出前先做前端防呆，錯誤直接提示、不打 API（後端仍會再驗）
+    const err = validateItems(fillItems)
+    if (err) { toast.error(err); return }
     const items = fillItems.map((i) => ({
       claimType: i.claimType,
+      claimTypeOther: i.claimType === 'OTHER' ? String(i.claimTypeOther ?? '').trim() : undefined,
       principal: num(i.principal),
       interest: num(i.interest),
       penalty: num(i.penalty),
@@ -141,6 +178,20 @@ export function CaseDetailPage() {
     }))
     await act(() => apiFetch(`/api/cases/${caseId}/my-items`, { method: 'PUT', body: JSON.stringify({ items }) }), '本行債權明細已儲存')
     setFillOpen(false)
+  }
+
+  /** 一類一筆：目前尚未被其他列使用的債權種類 */
+  const availableTypes = (idx: number) =>
+    CLAIM_TYPES.filter((t) => !fillItems.some((x, i) => i !== idx && x.claimType === t))
+  const nextUnusedType = () => CLAIM_TYPES.find((t) => !fillItems.some((x) => x.claimType === t))
+
+  /** 未填報就按確認 → 直接提示，不打 API（後端亦已攔阻） */
+  const confirmSelf = () => {
+    if (!myPart?.items || myPart.items.length === 0) {
+      toast.error('尚未填報債權，請先填報本行債權後再確認')
+      return
+    }
+    return act(() => apiFetch(`/api/cases/${caseId}/confirm`, { method: 'POST' }), '已確認本行債權')
   }
 
   const submitReport = async () => {
@@ -248,7 +299,7 @@ export function CaseDetailPage() {
                 {myPart.confirmationStatus === 'PENDING' ? (
                   <>
                     <Button size="sm" variant="secondary" onClick={openFill}>填報本行債權</Button>
-                    <Button size="sm" onClick={() => act(() => apiFetch(`/api/cases/${caseId}/confirm`, { method: 'POST' }), '已確認本行債權')}>確認無誤</Button>
+                    <Button size="sm" onClick={confirmSelf}>確認無誤</Button>
                   </>
                 ) : (
                   <Button size="sm" variant="secondary" onClick={() => act(() => apiFetch(`/api/cases/${caseId}/withdraw`, { method: 'POST' }), '已撤回確認')}>撤回確認</Button>
@@ -498,8 +549,13 @@ export function CaseDetailPage() {
           {fillItems.map((it, idx) => (
             <div key={idx} className="grid grid-cols-2 gap-2 rounded-xl border border-surface-border p-3 sm:grid-cols-3">
               <div className="col-span-full">
-                <SelectField label="債權種類" value={it.claimType} options={CLAIM_TYPES.map((t) => ({ value: t, label: CLAIM_TYPE_LABELS[t] }))} onChange={(e) => setFillItems((a) => a.map((x, i) => i === idx ? { ...x, claimType: e.target.value } : x))} />
+                <SelectField label="債權種類" value={it.claimType} options={availableTypes(idx).map((t) => ({ value: t, label: CLAIM_TYPE_LABELS[t] }))} onChange={(e) => setFillItems((a) => a.map((x, i) => i === idx ? { ...x, claimType: e.target.value } : x))} />
               </div>
+              {it.claimType === 'OTHER' && (
+                <div className="col-span-full">
+                  <TextField label="債權內容 *" value={String(it.claimTypeOther ?? '')} placeholder="例：勞工紓困貸款" onChange={(e) => setFillItems((a) => a.map((x, i) => i === idx ? { ...x, claimTypeOther: e.target.value } : x))} />
+                </div>
+              )}
               <div className="col-span-full text-xs font-medium text-slate-500">對外債權（揭露後參與行互見）</div>
               <TextField label="本金" type="number" value={String(it.principal)} onChange={(e) => setFillItems((a) => a.map((x, i) => i === idx ? { ...x, principal: e.target.value } : x))} />
               <TextField label="利息" type="number" value={String(it.interest)} onChange={(e) => setFillItems((a) => a.map((x, i) => i === idx ? { ...x, interest: e.target.value } : x))} />
@@ -515,8 +571,15 @@ export function CaseDetailPage() {
               <button type="button" className="col-span-full text-left text-xs text-rose-600" onClick={() => setFillItems((a) => a.filter((_, i) => i !== idx))}>移除此列</button>
             </div>
           ))}
-          <button type="button" className="text-sm text-brand-700" onClick={() => setFillItems((a) => [...a, emptyItem()])}>+ 新增一列</button>
-          <p className="text-xs text-slate-500">僅您本行可填報／修改本行數字，全員確認前其他行看不到。</p>
+          {nextUnusedType() ? (
+            <button type="button" className="text-sm text-brand-700" onClick={() => setFillItems((a) => [...a, emptyItem(nextUnusedType())])}>+ 新增一列</button>
+          ) : (
+            <p className="text-xs text-slate-400">六類債權均已填報，無可新增的種類。</p>
+          )}
+          <p className="text-xs text-slate-500">
+            僅您本行可填報／修改本行數字，全員確認前其他行看不到。<br />
+            <span className="text-slate-400">每種債權種類僅能一列，同類金額請由本行自行合計；金額須 ≥ 0 且不超過 9 位數。</span>
+          </p>
         </div>
       </Modal>
 

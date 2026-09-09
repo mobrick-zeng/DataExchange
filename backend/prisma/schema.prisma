@@ -338,10 +338,13 @@ model CreditItem {
   // 對內債權（僅本行/稽核可見，不對他行揭露）；internalTotal = internalPrincipal+internalInterest（即算）
   internalPrincipal Decimal @default(0) @db.Decimal(21, 4) // 對內本金
   internalInterest  Decimal @default(0) @db.Decimal(21, 4) // 對內利息
+  claimTypeOther String?  // 債權種類為「其他」時填寫之債權內容（如：勞工紓困貸款）
   note          String?
 
   participant CaseParticipantBank @relation(fields: [participantId], references: [participantId], onDelete: Cascade)
 
+  // 一類一筆：同一參與行的同一債權種類僅能有一列（同類金額由該行自行合計）
+  @@unique([participantId, claimType])
   @@index([participantId])
   @@map("credit_items")
 }

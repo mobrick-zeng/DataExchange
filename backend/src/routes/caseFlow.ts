@@ -83,13 +83,15 @@ async function reopenForReconfirm(caseId: string) {
 }
 
 /** 確認單一案件（確認自己）。確認當下凍結該行債權金額；可能觸發揭露。 */
-type ConfirmResult = { ok: true; disclosed: boolean } | { ok: false; reason: 'NOT_PARTICIPANT' | 'NOT_FOUND' | 'BAD_STATUS' }
+type ConfirmResult = { ok: true; disclosed: boolean } | { ok: false; reason: 'NOT_PARTICIPANT' | 'NOT_FOUND' | 'BAD_STATUS' | 'NO_ITEMS' }
 async function confirmSelf(caseId: string, userId: string, bankCode: string): Promise<ConfirmResult> {
   const c = await prisma.case.findUnique({ where: { caseId } })
   if (!c) return { ok: false, reason: 'NOT_FOUND' }
   if (c.status !== 'PENDING_CONFIRMATION') return { ok: false, reason: 'BAD_STATUS' }
   const part = await prisma.caseParticipantBank.findUnique({ where: { caseId_bankCode: { caseId, bankCode } }, include: { items: true } })
   if (!part || part.removedAt) return { ok: false, reason: 'NOT_PARTICIPANT' }
+  // 尚未填報債權者不得確認（避免以 0 元誤確認）
+  if (part.items.length === 0) return { ok: false, reason: 'NO_ITEMS' }
   const claim = r4(part.items.reduce((s, it) => s + itemTotal(it), 0))
 
   await prisma.caseParticipantBank.update({
@@ -112,8 +114,16 @@ export async function caseFlowRoutes(app: FastifyInstance) {
     const { userId, bankCode } = req.user
     const r = await confirmSelf(caseId, userId, bankCode)
     if (!r.ok) {
-      const code = r.reason === 'NOT_FOUND' ? 404 : r.reason === 'BAD_STATUS' ? 409 : 403
-      const msg = r.reason === 'NOT_PARTICIPANT' ? '您不是此案件的（有效）參與行' : r.reason === 'BAD_STATUS' ? '案件非於封閉申報階段' : '找不到案件'
+      const code =
+        r.reason === 'NOT_FOUND' ? 404 : r.reason === 'BAD_STATUS' || r.reason === 'NO_ITEMS' ? 409 : 403
+      const msg =
+        r.reason === 'NOT_PARTICIPANT'
+          ? '您不是此案件的（有效）參與行'
+          : r.reason === 'BAD_STATUS'
+            ? '案件非於封閉申報階段'
+            : r.reason === 'NO_ITEMS'
+              ? '尚未填報債權，請先填報本行債權後再確認'
+              : '找不到案件'
       return reply.code(code).send({ message: msg })
     }
     await writeAudit({ actionType: 'CASE_CONFIRMED', userId, bankCode, targetType: 'CASE', targetId: caseId, req })
