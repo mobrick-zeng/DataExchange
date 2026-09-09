@@ -70,6 +70,63 @@ const DISCLOSED: string[] = ['PENDING_OUTCOME', 'ESTABLISHED', 'NOT_ESTABLISHED'
 const isDisclosed = (status: string) => DISCLOSED.includes(status)
 const isTerminal = (status: string) => status === 'ESTABLISHED' || status === 'NOT_ESTABLISHED'
 
+// ============ 案件列表查詢（篩選／排序／分頁） ============
+const CASE_STATUSES = ['DRAFT', 'PENDING_CONFIRMATION', 'PENDING_OUTCOME', 'ESTABLISHED', 'NOT_ESTABLISHED'] as const
+const OPEN_STATUSES = ['DRAFT', 'PENDING_CONFIRMATION', 'PENDING_OUTCOME'] as const
+const CLOSED_STATUSES = ['ESTABLISHED', 'NOT_ESTABLISHED'] as const
+// 排序欄位白名單：絕不把使用者傳入的字串直接交給 orderBy
+const SORT_FIELDS = ['updatedAt', 'receiptDate', 'docNumber', 'status', 'mainBankCode'] as const
+
+const caseQuerySchema = z.object({
+  tab: z.enum(['open', 'closed', 'all']).default('open'),
+  status: z.array(z.enum(CASE_STATUSES)).max(5).optional(),
+  court: z.array(z.string().min(1).max(20)).max(30).optional(),
+  main: z.string().min(1).max(10).optional(),
+  // role／myConf 指「本行在該案」的角色與確認狀態（由 JWT 的 bankCode 推導，不可指定他行）
+  role: z.enum(['MAIN', 'CO_BANK']).optional(),
+  myConf: z.enum(['PENDING', 'CONFIRMED']).optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  // 公文文號搜尋。刻意以 POST body 傳遞（不置於 URL），避免寫入反向代理／瀏覽器紀錄
+  q: z.string().trim().min(1).max(60).optional(),
+  sort: z.enum(SORT_FIELDS).default('updatedAt'),
+  order: z.enum(['asc', 'desc']).default('desc'),
+  page: z.number().int().min(1).max(10000).default(1),
+  size: z.number().int().min(1).max(100).default(50),
+})
+
+/** 列表單列的共用映射（GET / 與 POST /query 共用，確保欄位一致） */
+function mapCaseRow(
+  c: {
+    caseId: string; courtCode: string; docNumber: string; mainBankCode: string; status: string
+    consolidatedTotal: Prisma.Decimal | null; receiptDate: Date | null; updatedAt: Date
+    court: { courtName: string }; mainBank: { bankName: string }
+    participants: { bankCode: string; roleInCase: string; confirmationStatus: string; removedAt: Date | null }[]
+  },
+  role: string,
+  bankCode: string,
+) {
+  const active = c.participants.filter((p) => !p.removedAt)
+  const mine = active.find((p) => p.bankCode === bankCode)
+  return {
+    caseId: c.caseId,
+    courtCode: c.courtCode,
+    courtName: c.court.courtName,
+    docNumber: c.docNumber,
+    mainBankCode: c.mainBankCode,
+    mainBankName: c.mainBank.bankName,
+    status: c.status,
+    receiptDate: c.receiptDate,
+    updatedAt: c.updatedAt,
+    // 平台管理員不見金額
+    consolidatedTotal: role === 'ADMIN' ? null : c.consolidatedTotal,
+    participantCount: active.length,
+    confirmedCount: active.filter((p) => p.confirmationStatus === 'CONFIRMED').length,
+    myRoleInCase: mine?.roleInCase ?? null,
+    myConfirmationStatus: mine?.confirmationStatus ?? null,
+  }
+}
+
 function relationTo(user: { role: string; bankCode: string }, mainBankCode: string, participantBankCodes: string[]) {
   const isAdmin = user.role === 'ADMIN'
   const isAuditor = user.role === 'PLATFORM_AUDITOR'
@@ -121,6 +178,54 @@ export async function caseRoutes(app: FastifyInstance) {
         }
       }),
     }
+  })
+
+  // POST /api/cases/query — 列表查詢（篩選／排序／分頁）
+  // 以 POST 傳遞條件：搜尋字串等內容不進入 URL，因此不會落入反向代理存取日誌或瀏覽器紀錄。
+  app.post('/query', async (req, reply) => {
+    const { role, bankCode } = req.user
+    const parsed = caseQuerySchema.safeParse(req.body ?? {})
+    if (!parsed.success) return reply.code(400).send({ message: '查詢條件不正確', issues: parsed.error.issues })
+    const f = parsed.data
+    const isPlatform = role === 'ADMIN' || role === 'PLATFORM_AUDITOR'
+
+    // 基礎可視範圍一律由 JWT 決定；以下所有條件只能在此基礎上「收窄」，不得放寬
+    const base: Prisma.CaseWhereInput = isPlatform
+      ? {}
+      : { OR: [{ mainBankCode: bankCode }, { participants: { some: { bankCode, removedAt: null } } }] }
+    const and: Prisma.CaseWhereInput[] = [base]
+
+    if (f.tab === 'open') and.push({ status: { in: [...OPEN_STATUSES] } })
+    else if (f.tab === 'closed') and.push({ status: { in: [...CLOSED_STATUSES] } })
+    if (f.status?.length) and.push({ status: { in: f.status } })
+    if (f.court?.length) and.push({ courtCode: { in: f.court } })
+    if (f.main) and.push({ mainBankCode: f.main })
+    if (!isPlatform && f.role) and.push({ participants: { some: { bankCode, removedAt: null, roleInCase: f.role } } })
+    if (!isPlatform && f.myConf) and.push({ participants: { some: { bankCode, removedAt: null, confirmationStatus: f.myConf } } })
+    if (f.from) and.push({ receiptDate: { gte: new Date(`${f.from}T00:00:00.000Z`) } })
+    if (f.to) and.push({ receiptDate: { lte: new Date(`${f.to}T23:59:59.999Z`) } })
+    if (f.q) and.push({ docNumber: { contains: f.q, mode: 'insensitive' } })
+
+    const where: Prisma.CaseWhereInput = { AND: and }
+    // 加 caseId 決勝鍵：避免 offset 分頁在資料變動時順序不穩，導致重複或漏列
+    const orderBy = [{ [f.sort]: f.order }, { caseId: 'desc' }] as Prisma.CaseOrderByWithRelationInput[]
+
+    const [total, rows] = await Promise.all([
+      prisma.case.count({ where }),
+      prisma.case.findMany({
+        where,
+        orderBy,
+        skip: (f.page - 1) * f.size,
+        take: f.size,
+        include: {
+          court: { select: { courtName: true } },
+          mainBank: { select: { bankName: true } },
+          participants: { select: { bankCode: true, roleInCase: true, confirmationStatus: true, removedAt: true } },
+        },
+      }),
+    ])
+
+    return { cases: rows.map((c) => mapCaseRow(c, role, bankCode)), total, page: f.page, size: f.size }
   })
 
   // POST /api/cases — 建立案件（僅銀行人員；建立者所屬銀行即最大債權行/主辦）
