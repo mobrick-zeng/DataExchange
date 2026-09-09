@@ -321,7 +321,8 @@ model CaseParticipantBank {
   bank      Bank  @relation(fields: [bankCode], references: [bankCode])
   confirmer User? @relation("ParticipantConfirmedBy", fields: [confirmedBy], references: [userId])
 
-  items CreditItem[]
+  items        CreditItem[]
+  securedItems SecuredCreditItem[]
 
   @@unique([caseId, bankCode])
   @@index([bankCode])
@@ -356,6 +357,50 @@ model CreditItem {
 // ============================== 疑義與版本化 ==============================
 
 /// 揭露後的疑義標記（append-only）；標記→退回 PENDING_CONFIRMATION 全員重新確認
+/// 有擔保債權（依玉山提供「前置調解債權回報檔」之有擔保表建立）。
+///
+/// ⚠️ 現階段**僅保留資料結構**：尚未開放輸入、驗證與彙整表呈現。
+///    欄位集與無擔保（CreditItem）差異甚大（本表 16 欄 vs 6 欄），故另立一表，
+///    亦與回報檔「兩張表」的結構一致。
+///    待客戶確認後才啟用：(a) 個資欄位 accountNo 是否收取與遮罩方式；
+///    (b) 有擔保債權在債權彙整表是分開一張表或併入總計。
+model SecuredCreditItem {
+  securedItemId String @id @default(cuid())
+  participantId String
+
+  collateralType String // 擔保品類別（回報檔為代碼，如 "25"；代碼主檔待確認）
+
+  // 債權金額（對外）；合計 = principal+interest+penalty+otherFee（讀取即算，不落地）
+  principal Decimal @default(0) @db.Decimal(21, 4)
+  interest  Decimal @default(0) @db.Decimal(21, 4)
+  penalty   Decimal @default(0) @db.Decimal(21, 4)
+  otherFee  Decimal @default(0) @db.Decimal(21, 4)
+
+  // 授信與繳款資訊
+  originalLoanAmount  Decimal? @db.Decimal(21, 4) // 原借款金額
+  creditBalance       Decimal? @db.Decimal(21, 4) // 授信餘額
+  periodPayment       Decimal? @db.Decimal(21, 4) // 每期應付金額
+  lastPaymentAmount   Decimal? @db.Decimal(21, 4) // 最近一期繳款金額
+  overdueUnpaidAmount Decimal? @db.Decimal(21, 4) // 已到期尚未清償金額
+
+  contractStartDate DateTime? // 契約起始年月
+  contractEndDate   DateTime? // 契約到期日
+  lastInterestDate  DateTime? // 最後繳息日
+  monthlyDueDay     Int? // 每月應還款日（1–31）
+
+  /// ⚠️ 個資欄位：帳號。保留結構但**尚未啟用**——是否收取、如何遮罩待客戶／法遵確認。
+  accountNo String?
+
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  participant CaseParticipantBank @relation(fields: [participantId], references: [participantId], onDelete: Cascade)
+
+  @@index([participantId])
+  @@map("secured_credit_items")
+}
+
 model CaseDoubt {
   doubtId          String   @id @default(cuid())
   caseId           String
