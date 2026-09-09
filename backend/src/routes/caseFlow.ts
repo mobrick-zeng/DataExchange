@@ -21,10 +21,12 @@ const isTerminal = (s: string) => s === 'ESTABLISHED' || s === 'NOT_ESTABLISHED'
 async function maybeDisclose(caseId: string): Promise<boolean> {
   const c = await prisma.case.findUnique({
     where: { caseId },
-    include: { participants: { where: { removedAt: null }, include: { items: true } } },
+    include: { participants: { include: { items: true } } },
   })
   if (!c || c.status !== 'PENDING_CONFIRMATION') return false
-  const active = c.participants
+  const active = c.participants.filter((p) => p.removedAt == null)
+  // 該輪被排除（主辦移出／自行拒絕）的行：不計入彙整，但仍留快照存證
+  const excluded = c.participants.filter((p) => p.removedAt != null)
   const hasMain = active.some((p) => p.roleInCase === 'MAIN')
   const hasCoBank = active.some((p) => p.roleInCase === 'CO_BANK')
   if (!hasMain || !hasCoBank) return false
@@ -38,7 +40,7 @@ async function maybeDisclose(caseId: string): Promise<boolean> {
       data: { status: 'PENDING_OUTCOME', disclosedAt: new Date(), consolidatedTotal: new Prisma.Decimal(consolidatedTotal) },
     }),
     prisma.declarationSnapshot.createMany({
-      data: active.map((p) => ({
+      data: [...active, ...excluded].map((p) => ({
         caseId,
         round: c.round,
         bankCode: p.bankCode,
@@ -55,6 +57,10 @@ async function maybeDisclose(caseId: string): Promise<boolean> {
         ),
         claimTotal: new Prisma.Decimal(num(p.confirmedClaimAmount)),
         confirmedAt: p.confirmedAt,
+        // 被排除者標記，供事後還原「該輪誰被排除、為什麼」
+        excluded: p.removedAt != null,
+        removalKind: p.removalKind,
+        removalReason: p.removalReason,
       })),
     }),
   ])
@@ -64,6 +70,19 @@ async function maybeDisclose(caseId: string): Promise<boolean> {
   }
   await writeAudit({ actionType: 'CASE_DISCLOSED', targetType: 'CASE', targetId: caseId, detail: `round ${c.round}` })
   return true
+}
+
+/** 檢查是否已符合揭露條件（唯讀，不執行揭露）：封閉申報中、含主辦與至少一家其他債權行、且全部已確認。 */
+async function isReadyToDisclose(caseId: string): Promise<boolean> {
+  const c = await prisma.case.findUnique({
+    where: { caseId },
+    include: { participants: { where: { removedAt: null } } },
+  })
+  if (!c || c.status !== 'PENDING_CONFIRMATION') return false
+  const active = c.participants
+  if (!active.some((p) => p.roleInCase === 'MAIN')) return false
+  if (!active.some((p) => p.roleInCase === 'CO_BANK')) return false
+  return active.every((p) => p.confirmationStatus === 'CONFIRMED')
 }
 
 /** 因疑義／組成變更退回：狀態轉 PENDING_CONFIRMATION、輪次 +1、重置全員確認（保留各行明細供修改）。 */
@@ -211,20 +230,51 @@ export async function caseFlowRoutes(app: FastifyInstance) {
     if (!c) return
     if (isTerminal(c.status)) return reply.code(409).send({ message: '案件已結案，不可變更' })
     if (targetBank === c.mainBankCode) return reply.code(400).send({ message: '不可移出主辦自身' })
-    const reason = (req.body?.reason ?? '').toString()
+    // 移出理由必填（與「拒絕參與」對稱，並留下可稽核依據）
+    const parsedReason = z.object({ reason: z.string().trim().min(1) }).safeParse(req.body)
+    if (!parsedReason.success) return reply.code(400).send({ message: '移出參與行需填寫理由' })
+    const reason = parsedReason.data.reason.trim()
     const part = await prisma.caseParticipantBank.findUnique({ where: { caseId_bankCode: { caseId, bankCode: targetBank } } })
     if (!part || part.removedAt) return reply.code(404).send({ message: '該銀行未參與此案件' })
 
     await prisma.caseParticipantBank.update({
       where: { participantId: part.participantId },
-      data: { removedAt: new Date(), removalKind: 'REMOVED_BY_MAIN', removalReason: reason || null, confirmationStatus: 'PENDING', confirmedAt: null, confirmedBy: null, confirmedClaimAmount: null },
+      data: { removedAt: new Date(), removalKind: 'REMOVED_BY_MAIN', removalReason: reason, confirmationStatus: 'PENDING', confirmedAt: null, confirmedBy: null, confirmedClaimAmount: null },
     })
-    await notifyBankUsers({ bankCode: targetBank, type: 'PARTICIPANT_REMOVED', message: `您已被移出案件（${c.docNumber}）`, relatedCaseId: caseId })
-    await writeAudit({ actionType: 'PARTICIPANT_REMOVED', userId: req.user.userId, bankCode: req.user.bankCode, targetType: 'CASE', targetId: caseId, detail: `remove ${targetBank}`, req })
+    await notifyBankUsers({
+      bankCode: targetBank,
+      type: 'PARTICIPANT_REMOVED',
+      message: `您已被移出案件（${c.docNumber}）。理由：${reason}。您先前填報的明細仍保留；如經重新邀請，請重新確認。`,
+      relatedCaseId: caseId,
+    })
+    await writeAudit({ actionType: 'PARTICIPANT_REMOVED', userId: req.user.userId, bankCode: req.user.bankCode, targetType: 'CASE', targetId: caseId, detail: `remove ${targetBank}: ${reason}`, req })
 
-    if (DISCLOSED.includes(c.status)) await reopenForReconfirm(caseId)
-    else await maybeDisclose(caseId)
-    return { ok: true }
+    if (DISCLOSED.includes(c.status)) {
+      // 已揭露 → 組成變更，退回全員重新確認
+      await reopenForReconfirm(caseId)
+      return { ok: true, reopened: true, readyToDisclose: false }
+    }
+    // 未揭露 → 「排除某行」與「定案」刻意分離：不自動揭露。
+    // 若因此湊成全員確認，回報 readyToDisclose，由主辦另行明確執行 /disclose。
+    const readyToDisclose = await isReadyToDisclose(caseId)
+    return { ok: true, reopened: false, readyToDisclose }
+  })
+
+  // POST /:caseId/disclose — 主辦「明確」產出債權彙整表（兩段式）。
+  // 正常情況最後一家確認即自動揭露；此端點用於因移出等組成變更而湊成全員確認時，
+  // 讓「排除某行」與「定案」成為兩個有意識的決定。
+  app.post('/:caseId/disclose', async (req: FastifyRequest<{ Params: { caseId: string }; Body: { confirm?: boolean } }>, reply) => {
+    const { caseId } = req.params
+    const c = await assertMain(req, reply, caseId)
+    if (!c) return
+    const parsed = z.object({ confirm: z.literal(true) }).safeParse(req.body)
+    if (!parsed.success) return reply.code(400).send({ message: '需明確二次確認（confirm=true）' })
+    if (c.status !== 'PENDING_CONFIRMATION') return reply.code(409).send({ message: '僅封閉申報階段可產出彙整表' })
+    if (!(await isReadyToDisclose(caseId))) return reply.code(409).send({ message: '尚有參與行未確認，無法產出彙整表' })
+    const ok = await maybeDisclose(caseId)
+    if (!ok) return reply.code(409).send({ message: '未符合揭露條件' })
+    await writeAudit({ actionType: 'CASE_DISCLOSED', userId: req.user.userId, bankCode: req.user.bankCode, targetType: 'CASE', targetId: caseId, detail: `manual disclose (round ${c.round})`, req })
+    return { ok: true, disclosed: true }
   })
 
   // POST /:caseId/doubt — 揭露後任一參與行標記疑義 → 退回全員重新確認

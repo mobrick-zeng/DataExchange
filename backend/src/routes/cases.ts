@@ -296,20 +296,26 @@ export async function caseRoutes(app: FastifyInstance) {
     const existing = await prisma.caseParticipantBank.findUnique({ where: { caseId_bankCode: { caseId, bankCode: inviteBank } } })
     if (existing) {
       if (!existing.removedAt) return reply.code(409).send({ message: '該銀行已受邀' })
-      // 重新邀請：清空移出紀錄、回到待確認、清空舊明細
-      await prisma.$transaction([
-        prisma.creditItem.deleteMany({ where: { participantId: existing.participantId } }),
-        prisma.caseParticipantBank.update({
-          where: { participantId: existing.participantId },
-          data: { removedAt: null, removalKind: null, removalReason: null, confirmationStatus: 'PENDING', confirmedAt: null, confirmedBy: null, confirmedClaimAmount: null },
-        }),
-      ])
+      // 重新邀請：清空移出紀錄、回到待確認。
+      // 明細「保留」不刪——誤移出後重邀時資料仍在，該行可直接確認或修改；
+      // 因 confirmationStatus 已重置，舊數字不會自動生效、也不會自動觸發揭露。
+      await prisma.caseParticipantBank.update({
+        where: { participantId: existing.participantId },
+        data: { removedAt: null, removalKind: null, removalReason: null, confirmationStatus: 'PENDING', confirmedAt: null, confirmedBy: null, confirmedClaimAmount: null },
+      })
     } else {
       await prisma.caseParticipantBank.create({
         data: { caseId, bankCode: inviteBank, roleInCase: 'CO_BANK', confirmationStatus: 'PENDING' },
       })
     }
-    await notifyBankUsers({ bankCode: inviteBank, type: 'CASE_INVITATION', message: `您受邀參與案件（${c.docNumber}）`, relatedCaseId: caseId })
+    await notifyBankUsers({
+      bankCode: inviteBank,
+      type: 'CASE_INVITATION',
+      message: existing
+        ? `您再次受邀參與案件（${c.docNumber}）。您先前填報的明細仍保留，請確認或更新後再次確認。`
+        : `您受邀參與案件（${c.docNumber}）`,
+      relatedCaseId: caseId,
+    })
     await writeAudit({ actionType: 'PARTICIPANT_INVITED', userId: req.user.userId, bankCode: req.user.bankCode, targetType: 'CASE', targetId: caseId, detail: `invite ${inviteBank}`, req })
     return { ok: true }
   })

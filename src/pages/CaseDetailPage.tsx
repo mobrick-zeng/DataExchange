@@ -123,6 +123,11 @@ export function CaseDetailPage() {
   const [doubtOpen, setDoubtOpen] = useState(false)
   const [doubtReason, setDoubtReason] = useState('')
   const [doubtPointer, setDoubtPointer] = useState('')
+  const [removeTarget, setRemoveTarget] = useState<{ bankCode: string; bankName: string } | null>(null)
+  const [removeReason, setRemoveReason] = useState('')
+  const [discloseOpen, setDiscloseOpen] = useState(false)
+  const [discloseAck, setDiscloseAck] = useState(false)
+  const [fillFromExisting, setFillFromExisting] = useState(false)
   const [reportEstablished, setReportEstablished] = useState<boolean | null>(null)
   const [reportReason, setReportReason] = useState('')
   const [reportAck, setReportAck] = useState(false)
@@ -149,6 +154,13 @@ export function CaseDetailPage() {
   const removed = participants.filter((p) => p.removedAt)
   const myPart = active.find((p) => p.bankCode === viewer.bankCode)
   const confirmedCount = active.filter((p) => p.confirmationStatus === 'CONFIRMED').length
+  // 已符合揭露條件但尚未揭露（多因移出參與行而「湊成」全員確認）→ 需主辦明確定案
+  const readyToDisclose =
+    isMain &&
+    c.status === 'PENDING_CONFIRMATION' &&
+    active.some((p) => p.roleInCase === 'MAIN') &&
+    active.some((p) => p.roleInCase === 'CO_BANK') &&
+    active.every((p) => p.confirmationStatus === 'CONFIRMED')
 
   const act = async (fn: () => Promise<unknown>, okMsg: string) => {
     try { await fn(); toast.success(okMsg); load() } catch (e) { toast.error((e as Error).message) }
@@ -158,7 +170,9 @@ export function CaseDetailPage() {
 
   const openFill = () => {
     const mine = myPart?.items
-    setFillItems(mine && mine.length ? mine.map((i) => ({ ...i })) : [emptyItem()])
+    const hasExisting = !!(mine && mine.length)
+    setFillFromExisting(hasExisting)
+    setFillItems(hasExisting ? mine!.map((i) => ({ ...i })) : [emptyItem()])
     setFillOpen(true)
   }
   const saveFill = async () => {
@@ -317,6 +331,18 @@ export function CaseDetailPage() {
         </div>
       )}
 
+      {/* 全員已確認但尚未揭露（通常因移出參與行而湊成）→ 主辦需明確定案 */}
+      {readyToDisclose && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-brand-500/40 bg-brand-500/10 px-4 py-3">
+          <p className="text-sm text-brand-800">
+            目前所有參與行皆已確認，可產出<b>債權彙整表</b>並進入待回報。產出後即凍結金額，如需變更須由疑義退回。
+          </p>
+          <div className="ml-auto">
+            <Button size="sm" onClick={() => { setDiscloseAck(false); setDiscloseOpen(true) }}>產出債權彙整表</Button>
+          </div>
+        </div>
+      )}
+
       {/* 參與銀行與確認進度 */}
       <section className="rounded-2xl border border-surface-border bg-surface-raised p-5 shadow-card">
         <div className="mb-3 flex items-center justify-between">
@@ -334,7 +360,7 @@ export function CaseDetailPage() {
                 </span>
                 {isMain && !disclosed && p.roleInCase === 'CO_BANK' && (
                   <button type="button" className="text-xs text-rose-600 hover:underline"
-                    onClick={() => act(() => apiFetch(`/api/cases/${caseId}/participants/${p.bankCode}/remove`, { method: 'POST', body: JSON.stringify({ reason: '主辦移出' }) }), '已移出該行')}>移出</button>
+                    onClick={() => { setRemoveTarget({ bankCode: p.bankCode, bankName: p.bankName }); setRemoveReason('') }}>移出</button>
                 )}
               </span>
             </div>
@@ -576,6 +602,11 @@ export function CaseDetailPage() {
           ) : (
             <p className="text-xs text-slate-400">六類債權均已填報，無可新增的種類。</p>
           )}
+          {fillFromExisting && (
+            <p className="rounded-lg border border-brand-500/30 bg-brand-500/5 px-3 py-2 text-xs text-brand-800">
+              以下為您<b>先前填報</b>的內容（曾被移出／退回時仍保留），請確認或更新後再次確認。
+            </p>
+          )}
           <p className="text-xs text-slate-500">
             僅您本行可填報／修改本行數字，全員確認前其他行看不到。<br />
             <span className="text-slate-400">每種債權種類僅能一列，同類金額請由本行自行合計；金額須 ≥ 0 且不超過 9 位數。</span>
@@ -595,6 +626,51 @@ export function CaseDetailPage() {
           <TextField label="疑義理由 *" value={doubtReason} onChange={(e) => setDoubtReason(e.target.value)} placeholder="請說明有疑義之處" />
           <SelectField label="指向某參與行（選填）" placeholder="不指定" value={doubtPointer} onChange={(e) => setDoubtPointer(e.target.value)} options={active.map((p) => ({ value: p.bankCode, label: p.bankName }))} />
           <p className="text-xs text-slate-500">送出後案件退回封閉申報，全員確認狀態全部重置，需再次全員確認。</p>
+        </div>
+      </Modal>
+
+      <Modal open={removeTarget != null} onClose={() => setRemoveTarget(null)} title={`移出參與行：${removeTarget?.bankName ?? ''}`} widthClassName="max-w-md"
+        footer={<><Button variant="secondary" onClick={() => setRemoveTarget(null)}>取消</Button>
+          <Button variant="danger" disabled={!removeReason.trim()} onClick={() => {
+            const t = removeTarget!
+            act(() => apiFetch(`/api/cases/${caseId}/participants/${t.bankCode}/remove`, { method: 'POST', body: JSON.stringify({ reason: removeReason.trim() }) }), `已移出 ${t.bankName}`)
+            setRemoveTarget(null); setRemoveReason('')
+          }}>確認移出</Button></>}>
+        <div className="flex flex-col gap-3 text-sm">
+          <TextField label="移出理由 *" value={removeReason} onChange={(e) => setRemoveReason(e.target.value)} placeholder="例如：經核對本案公文，該行非本案債權人" />
+          <p className="text-xs text-slate-500">
+            理由將通知該行並留存稽核軌跡。該行<b>先前填報的明細仍保留</b>，如經重新邀請需重新確認。<br />
+            移出<b>不會</b>直接定案；若移出後所有參與行皆已確認，需由您再按「產出債權彙整表」才會揭露。
+          </p>
+        </div>
+      </Modal>
+
+      <Modal open={discloseOpen} onClose={() => setDiscloseOpen(false)} title="產出債權彙整表（定案）" widthClassName="max-w-md"
+        footer={<><Button variant="secondary" onClick={() => setDiscloseOpen(false)}>取消</Button>
+          <Button disabled={!discloseAck} onClick={() => {
+            act(() => apiFetch(`/api/cases/${caseId}/disclose`, { method: 'POST', body: JSON.stringify({ confirm: true }) }), '已產出債權彙整表')
+            setDiscloseOpen(false); setDiscloseAck(false)
+          }}>確認產出</Button></>}>
+        <div className="flex flex-col gap-3 text-sm">
+          <p className="text-slate-700">
+            目前列入彙整的參與行共 <b>{active.length}</b> 家，皆已確認。
+            {removed.length > 0 && <> 另有 <b className="text-rose-700">{removed.length}</b> 家已被移出／退出，其債權<b>不列入</b>本次彙整表。</>}
+          </p>
+          {removed.length > 0 && (
+            <ul className="rounded-lg border border-rose-500/30 bg-rose-500/5 px-3 py-2 text-xs text-rose-700">
+              {removed.map((p) => (
+                <li key={p.participantId}>
+                  不列入：{p.bankName}
+                  {p.removalKind === 'REMOVED_BY_MAIN' ? '（主辦移出）' : '（自行退出）'}
+                  {p.removalReason ? `：${p.removalReason}` : ''}
+                </li>
+              ))}
+            </ul>
+          )}
+          <label className="flex items-start gap-2 rounded-lg border border-brand-500/30 bg-brand-500/5 px-3 py-2 text-brand-800">
+            <input type="checkbox" checked={discloseAck} onChange={(e) => setDiscloseAck(e.target.checked)} className="mt-0.5" />
+            <span>我確認上列參與行與排除名單無誤，並了解產出後金額即<b>凍結</b>，如需變更須由疑義退回重新確認。</span>
+          </label>
         </div>
       </Modal>
 

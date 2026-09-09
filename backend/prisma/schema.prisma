@@ -381,6 +381,11 @@ model DeclarationSnapshot {
   confirmedAt DateTime?
   capturedAt DateTime @default(now())
 
+  // 該輪「被排除」的行亦留存證（主辦移出／自行拒絕），使該輪快照可完整還原誰在、誰不在
+  excluded      Boolean                 @default(false)
+  removalKind   ParticipantRemovalKind?
+  removalReason String?
+
   case Case @relation(fields: [caseId], references: [caseId], onDelete: Cascade)
 
   @@index([caseId, round])
