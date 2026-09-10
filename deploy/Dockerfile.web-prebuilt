@@ -1,0 +1,18 @@
+# 前端映像（使用「已在本機建好的」靜態產物）
+#
+# 為什麼不用根目錄的 Dockerfile？
+#   根目錄 Dockerfile 會在容器內跑 `npm run build`。當建置機與目標機**架構不同**時
+#   （例：Apple Silicon arm64 → OCI x86_64），buildx 會以 QEMU 模擬執行，而 Vite 依賴的
+#   esbuild 是 Go 二進位，Go runtime 在 QEMU 使用者態模擬下會因指標打包假設不成立而崩潰：
+#       runtime: lfstack.push invalid packing ... fatal error: lfstack.push
+#   本檔改為「只做 COPY、不執行任何二進位」，因此可安全跨架構建置。
+#
+# 前提：呼叫端必須先於本機執行 `VITE_API_BASE="" npm run build` 產生 dist/
+#       （VITE_API_BASE 必須是空字串，代表同源 /api；漏掉會烘焙成 http://localhost:4000）
+#
+# 建置脈絡由 deploy/build-and-ship.sh 組出（dist/ + nginx.conf + 本檔）。
+FROM nginx:1.27-alpine
+COPY dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]

@@ -8,7 +8,9 @@
 #     否則會覆蓋本檔預設值 → 憑證申請或 CORS 會對不上。）
 #
 # 用法：
-#   HTTPS（預設）： docker compose -f docker-compose.fullstack.yml -p dataexchange up -d --build
+#   ⛔ 部署主機（OCI）一律不可 build：請用 deploy/build-and-ship.sh 於本機建置後傳送映像，
+#      主機端只執行 `up -d --no-build`。原因與程序見 deploy/README.md。
+#   本機驗收（開發機，可 build）： docker compose -f docker-compose.fullstack.yml -p dataexchange up -d --build
 #                 → 瀏覽器開 https://debit-ex-platform-staging.baasinnovation.com
 #                 （需 DNS 指向本機、放行 80/443；Caddy 自動申請 Let's Encrypt 憑證）
 #   IP／HTTP 驗證： 於 .env 設 DOMAIN=:80 且 PUBLIC_ORIGIN=http://<公網IP>，再執行同一指令

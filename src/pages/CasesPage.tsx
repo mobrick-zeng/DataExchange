@@ -257,7 +257,7 @@ export function CasesPage() {
             {activeFilterCount > 0 && <>（已套用 {activeFilterCount} 項條件）</>}
           </p>
           {activeFilterCount > 0 && (
-            <button type="button" onClick={clearFilters} className="text-xs font-medium text-brand-700 hover:underline">清除條件</button>
+            <Button variant="secondary" onClick={clearFilters}>清除條件</Button>
           )}
         </div>
       </div>

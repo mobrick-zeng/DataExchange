@@ -83,6 +83,7 @@
 │   └── prisma/          資料庫 schema、migrations、seed
 ├── docs/                系統文件
 │   └── architecture/    架構圖（HTML）
+├── deploy/              部署腳本與部署手冊
 ├── docker-compose.fullstack.yml   全棧一鍵部署
 └── Caddyfile            反向代理設定
 ```
@@ -106,6 +107,7 @@
 - 📗 **[操作與測試手冊 MANUAL](MANUAL.md)** —— 各角色操作步驟、流程圖與測試腳本（**v0.5**）。
 - 📐 **[案件流程設計（v0.3）](docs/案件流程設計_債權申報與彙整.md)** —— 目標流程、狀態機、可視性與各項定案決策的權威來源。
 - 📘 **[系統現況與執行說明](docs/系統現況與執行說明.md)** —— 部署步驟（本機／OCI、TLS/HTTPS）、環境變數、Demo 帳號等執行面說明。
+- 🚀 **[部署手冊 deploy/README.md](deploy/README.md)** —— 例行升版程序（`deploy/build-and-ship.sh`）、**不得在部署主機 build 的理由**、跨架構建置陷阱、回滾與備份。
 - 🗺️ **架構圖（HTML，直接以瀏覽器開啟）**
   - [`docs/architecture/系統技術架構圖.html`](docs/architecture/系統技術架構圖.html) —— 分層堆疊、案件狀態機、**資訊可視性閘門**（同一支 API、五種身分五種回應）、部署拓撲。
   - [`docs/architecture/資訊流架構圖_案件生命週期.html`](docs/architecture/資訊流架構圖_案件生命週期.html) —— 四泳道時序圖：一件案子從建立到結案，資訊如何在前後端之間流動；說明**銀行之間沒有直接連線、通知是拉不是推**。
