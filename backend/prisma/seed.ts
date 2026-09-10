@@ -124,11 +124,18 @@ const isDisclosed = (status: CaseSpec['status']) =>
 
 async function main() {
   // ---- 銀行與法院主檔（兩種模式皆需；upsert 冪等）----
+  // 機構主檔：`isActive` 屬「營運狀態」——由管理員於介面切換並留有稽核軌跡
+  // （PATCH /api/banks/:bankCode、/api/courts/:courtCode）。
+  // seed 於每次容器啟動皆會執行，若在 update 帶入 isActive，管理員啟用過的機構
+  // 會在每次部署後被打回種子預設值（2026-09-11 實際發生：已啟用的 22 個地方法院
+  // 於部署後被覆寫回 2 個）。故 update 僅更新描述性欄位，isActive 只在「首次建立」時採用種子值。
   for (const b of BANKS) {
-    await prisma.bank.upsert({ where: { bankCode: b.bankCode }, update: b, create: b })
+    const { isActive: _seedActive, ...descriptive } = b
+    await prisma.bank.upsert({ where: { bankCode: b.bankCode }, update: descriptive, create: b })
   }
   for (const c of COURTS) {
-    await prisma.court.upsert({ where: { courtCode: c.courtCode }, update: c, create: c })
+    const { isActive: _seedActive, ...descriptive } = c
+    await prisma.court.upsert({ where: { courtCode: c.courtCode }, update: descriptive, create: c })
   }
 
   const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 10)
