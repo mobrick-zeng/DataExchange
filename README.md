@@ -108,9 +108,9 @@
 - 📐 **[案件流程設計（v0.3）](docs/案件流程設計_債權申報與彙整.md)** —— 目標流程、狀態機、可視性與各項定案決策的權威來源。
 - 📘 **[系統現況與執行說明](docs/系統現況與執行說明.md)** —— 部署步驟（本機／OCI、TLS/HTTPS）、環境變數、Demo 帳號等執行面說明。
 - 🚀 **[部署手冊 deploy/README.md](deploy/README.md)** —— 例行升版程序（`deploy/build-and-ship.sh`）、**不得在部署主機 build 的理由**、跨架構建置陷阱、回滾與備份。
-- 🗺️ **架構圖（HTML，直接以瀏覽器開啟）**
-  - [`docs/architecture/系統技術架構圖.html`](docs/architecture/系統技術架構圖.html) —— 分層堆疊、案件狀態機、**資訊可視性閘門**（同一支 API、五種身分五種回應）、部署拓撲。
-  - [`docs/architecture/資訊流架構圖_案件生命週期.html`](docs/architecture/資訊流架構圖_案件生命週期.html) —— 四泳道時序圖：一件案子從建立到結案，資訊如何在前後端之間流動；說明**銀行之間沒有直接連線、通知是拉不是推**。
+- 🗺️ **架構圖** —— 兩種格式並存：`.md`（mermaid，GitHub 直接看、可 diff）與 `.html`（排版版，資訊較密、可列印簡報）。
+  - 系統技術架構圖：[Markdown](docs/architecture/系統技術架構圖.md)｜[HTML](docs/architecture/系統技術架構圖.html) —— 分層堆疊、案件狀態機、**資訊可視性閘門**（同一支 API、五種身分五種回應）、部署拓撲。
+  - 資訊流架構圖（案件生命週期）：[Markdown](docs/architecture/資訊流架構圖_案件生命週期.md)｜[HTML](docs/architecture/資訊流架構圖_案件生命週期.html) —— 一件案子從建立到結案，資訊如何在前後端之間流動；說明**銀行之間沒有直接連線、通知是拉不是推**。
 - 🗄️ `docs/舊版_*.md` —— 早期版本的歷史紀錄，僅供參考。
 
 ---
