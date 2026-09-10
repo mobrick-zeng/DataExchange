@@ -84,8 +84,16 @@ cd ~/DataExchange
 docker compose -p dataexchange -f docker-compose.fullstack.yml up -d --no-build api web
 ```
 
-> 每次升版前，腳本推上去的新映像會同時帶 `:latest` 與 `:<git describe>` 標籤；
-> 建議升版後**手動把被頂掉的舊映像標記成 `:<舊版>-rollback`**，保留一個版本的退路。
+腳本會把 `:latest` 與 `:<git describe>`（例：`v0.5-1-g750f2da`）兩個標籤一併送上主機，
+因此主機端隨時看得出 `:latest` 目前是哪一版：
+
+```bash
+docker images --format "{{.Repository}}:{{.Tag}} {{.ID}}" | grep dataexchange | sort
+```
+
+> 舊映像被新的 `:latest` 頂掉後會變成懸空映像。**升版後建議手動保留一個退路**：
+> `docker tag <舊映像ID> dataexchange-api:<舊版>-rollback`（web 同理）。
+> 目前主機上保有 `:v0.4e-rollback`（v0.5 之前）與 `:v0.5`（Dashboard 改版當下）。
 
 ---
 

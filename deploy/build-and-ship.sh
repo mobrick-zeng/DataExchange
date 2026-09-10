@@ -76,7 +76,11 @@ fi
 # ---------------------------------------------------------------- 3. 傳送
 # 串流傳送，不落地暫存檔（映像約 330 MB，壓縮後約 128 MB，實測約 2–3 分鐘）
 say "傳送映像至 ${HOST}"
-docker save dataexchange-api:latest dataexchange-web:latest \
+# 連同版本標籤一併傳送：同一份映像多個標籤不會增加傳輸量（層共用），
+# 但主機端才會留下可辨識的版本標記，回滾時不必猜哪個 latest 是哪一版。
+docker save \
+  dataexchange-api:latest "dataexchange-api:${VERSION}" \
+  dataexchange-web:latest "dataexchange-web:${VERSION}" \
   | gzip -1 | ${SSH} "${HOST}" 'gunzip -c | docker load'
 
 # ---------------------------------------------------------------- 4. 切換容器
