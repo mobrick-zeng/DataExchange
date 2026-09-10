@@ -178,7 +178,7 @@
         <div class="th"><span class="spine sp-amber"></span><span class="tname">資料存取層 — ORM</span>
           <span class="chips"><span class="chip c-amber">Prisma 5</span></span></div>
         <ul>
-          <li><b>Migrations 六版、皆為增量非破壞性</b>：<code>v03_init</code> → <code>v035_table_change</code> → <code>v04a_item_rules</code> → <code>v04b_participant_guards</code> → <code>v04d_case_edit_fields</code> → <code>v04e_secured_claims_reserved</code></li>
+          <li><b>Migrations 七版、皆為增量非破壞性</b>：<code>v03_init</code> → <code>v035_table_change</code> → <code>v04a_item_rules</code> → <code>v04b_participant_guards</code> → <code>v04d_case_edit_fields</code> → <code>v04e_secured_claims_reserved</code> → <code>v05a_audit_append_only</code></li>
           <li><code>v04a</code> 建立「一債權種類一列」唯一索引前，<b>先合併既有重複列</b>（防禦式遷移，既有申報資料不遺失）</li>
           <li>全棧映像啟動時自動 <b>migrate deploy ＋ seed</b>（冪等、防重）</li>
         </ul>
