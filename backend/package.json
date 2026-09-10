@@ -1,6 +1,6 @@
 {
   "name": "mediation-platform-backend",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "description": "集中式金融資料交換平台 — 正式版後端 (Fastify + Prisma + PostgreSQL)",

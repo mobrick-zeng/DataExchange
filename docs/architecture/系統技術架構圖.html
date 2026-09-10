@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1240">
+<title>系統技術架構圖 — 前置調解債權交換平台 v0.5</title>
+<style>
+  :root{
+    --bg:#f5f5f7; --card:#fff; --bd:#e3e3e8; --ink:#1d1d1f; --s900:#0f172a; --s700:#334155; --s500:#64748b; --s400:#94a3b8;
+    --brand:#0071e3; --brand700:#005bbb; --brand50:#eff6ff;
+    --violet:#6d28d9; --violet50:#f5f3ff; --amber:#b45309; --amber50:#fffbeb; --emerald:#047857; --emerald50:#ecfdf5; --rose:#be123c; --rose50:#fff1f2; --slate:#334155;
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+  .wrap{ width:1200px; margin:0 auto; padding:28px 28px 40px; }
+
+  header.pg{ margin-bottom:22px; }
+  header.pg h1{ margin:0; font-size:24px; font-weight:700; letter-spacing:-.02em; color:var(--s900); }
+  header.pg p{ margin:6px 0 0; font-size:13px; color:var(--s500); }
+  .stackline{ display:flex; flex-wrap:wrap; gap:6px; margin-top:12px; }
+  .pill{ font-size:11px; font-weight:600; padding:4px 10px; border-radius:9999px; background:#fff; border:1px solid var(--bd); color:var(--s700); }
+
+  .cols{ display:grid; grid-template-columns:1.7fr 1fr; gap:22px; align-items:start; }
+
+  /* ---- tier stack ---- */
+  .stack{ position:relative; padding-left:34px; }
+  .rail{ position:absolute; left:8px; top:14px; bottom:74px; width:2px; background:linear-gradient(#0071e3,#93c5fd); border-radius:2px; }
+  .railcap{ position:absolute; left:2px; font-size:10px; font-weight:700; color:var(--brand700); writing-mode:vertical-rl; }
+  .railcap.top{ top:2px; } .railcap.bot{ bottom:60px; }
+
+  .tier{ background:var(--card); border:1px solid var(--bd); border-radius:16px; box-shadow:0 2px 12px rgba(0,0,0,.06); padding:16px 18px; position:relative; }
+  .tier + .arrow{ height:34px; display:flex; align-items:center; justify-content:center; gap:8px; }
+  .arrow .lab{ font-size:11px; font-weight:600; color:var(--s500); background:#fff; border:1px solid var(--bd); padding:2px 9px; border-radius:9999px; }
+  .arrow svg{ color:var(--s400); }
+  .tier .th{ display:flex; align-items:center; gap:10px; margin-bottom:9px; }
+  .tier .spine{ width:6px; height:26px; border-radius:3px; flex-shrink:0; }
+  .tier .tname{ font-size:15px; font-weight:700; color:var(--s900); }
+  .tier .chips{ margin-left:auto; display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end; }
+  .chip{ font-size:11px; font-weight:600; padding:3px 9px; border-radius:8px; }
+  .tier ul{ margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:5px; }
+  .tier li{ font-size:12.5px; color:var(--s700); line-height:1.5; padding-left:16px; position:relative; }
+  .tier li::before{ content:""; position:absolute; left:2px; top:8px; width:5px; height:5px; border-radius:2px; background:var(--s400); }
+  .tier li b{ color:var(--s900); font-weight:600; }
+  .mini{ display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+  .mini .m{ font-size:11px; font-weight:600; color:var(--brand700); background:var(--brand50); border:1px solid #d6e6fb; padding:3px 8px; border-radius:8px; }
+
+  /* tone chips */
+  .c-brand{ background:var(--brand50); color:var(--brand700); } .sp-brand{ background:var(--brand); }
+  .c-slate{ background:#eef0f3; color:var(--slate); } .sp-slate{ background:#64748b; }
+  .c-amber{ background:var(--amber50); color:var(--amber); } .sp-amber{ background:#f59e0b; }
+  .c-violet{ background:var(--violet50); color:var(--violet); } .sp-violet{ background:#8b5cf6; }
+  .c-emerald{ background:var(--emerald50); color:var(--emerald); } .sp-emerald{ background:#10b981; }
+
+  /* ---- cross-cutting ---- */
+  .aside{ display:flex; flex-direction:column; gap:14px; }
+  .xhead{ font-size:12px; font-weight:700; color:var(--s400); text-transform:uppercase; letter-spacing:.08em; padding-left:2px; }
+  .xcard{ background:var(--card); border:1px solid var(--bd); border-radius:14px; box-shadow:0 2px 12px rgba(0,0,0,.06); padding:14px 16px; }
+  .xcard .xt{ display:flex; align-items:center; gap:9px; font-size:13.5px; font-weight:700; color:var(--s900); margin-bottom:8px; }
+  .xcard .xt .i{ width:26px; height:26px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .xcard .xt .i svg{ width:15px; height:15px; }
+  .xcard ul{ margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:5px; }
+  .xcard li{ font-size:12px; color:var(--s700); line-height:1.5; padding-left:14px; position:relative; }
+  .xcard li::before{ content:""; position:absolute; left:2px; top:7px; width:5px; height:5px; border-radius:2px; background:var(--s400); }
+  .xcard li b{ color:var(--s900); font-weight:600; }
+
+  /* ---- state machine strip ---- */
+  .band{ margin-top:22px; background:var(--card); border:1px solid var(--bd); border-radius:16px; box-shadow:0 2px 12px rgba(0,0,0,.06); padding:18px 20px; }
+  .band h2{ margin:0 0 14px; font-size:14px; font-weight:700; color:var(--s900); display:flex; align-items:center; gap:8px; }
+  .sm{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .st{ font-size:12.5px; font-weight:700; padding:8px 14px; border-radius:10px; border:1px solid var(--bd); background:#fff; color:var(--s900); white-space:nowrap; }
+  .st.draft{ color:#64748b; } .st.conf{ color:var(--brand700); border-color:#cfe0f5; background:var(--brand50);} .st.out{ color:var(--amber); border-color:#f3e2c0; background:var(--amber50);}
+  .st.ok{ color:var(--emerald); border-color:#c6ecd8; background:var(--emerald50);} .st.no{ color:var(--rose); border-color:#f4cdd5; background:var(--rose50);}
+  .sarrow{ color:var(--s400); font-size:12px; display:flex; align-items:center; gap:5px; }
+  .sarrow small{ color:var(--s500); font-weight:600; }
+  .loop{ margin-top:10px; font-size:12px; color:var(--s500); display:flex; align-items:center; gap:8px; }
+  .loop b{ color:var(--rose); }
+
+  /* ---- deploy band ---- */
+  .deploy{ margin-top:22px; background:#0f172a; border-radius:16px; padding:20px 22px; color:#fff; }
+  .deploy h2{ margin:0 0 4px; font-size:14px; font-weight:700; display:flex; align-items:center; gap:8px; }
+  .deploy .sub{ font-size:12px; color:#94a3b8; margin-bottom:16px; }
+  .dgrid{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+  .box{ background:#1e293b; border:1px solid #334155; border-radius:12px; padding:13px 14px; }
+  .box .bn{ font-size:13px; font-weight:700; color:#fff; display:flex; align-items:center; gap:7px; }
+  .box .bn .tag{ font-size:10px; font-weight:700; padding:2px 7px; border-radius:6px; background:#334155; color:#cbd5e1; }
+  .box .bd{ font-size:11.5px; color:#94a3b8; margin-top:7px; line-height:1.5; }
+  .box .port{ font-size:10.5px; color:#7dd3fc; font-weight:600; margin-top:6px; }
+  .dfoot{ margin-top:14px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .dfoot .df{ font-size:11px; font-weight:600; color:#cbd5e1; background:#1e293b; border:1px solid #334155; padding:4px 10px; border-radius:8px; }
+  .foot{ margin-top:20px; font-size:11px; color:var(--s400); text-align:center; }
+
+  /* ---- visibility matrix (第二段) ---- */
+  .mx{ width:100%; border-collapse:separate; border-spacing:0; margin-top:4px; }
+  .mx th, .mx td{ border-bottom:1px solid var(--bd); padding:9px 10px; text-align:center; font-size:12px; }
+  .mx thead th{ font-size:11px; font-weight:700; color:var(--s500); border-bottom:1px solid var(--s300); line-height:1.4; }
+  .mx thead th small{ display:block; font-weight:600; color:var(--s400); font-size:10px; }
+  .mx tbody th{ text-align:left; font-weight:700; color:var(--s900); font-size:12.5px; white-space:nowrap; }
+  .mx tbody th span{ display:block; font-weight:500; font-size:10.5px; color:var(--s500); margin-top:1px; }
+  .mx tbody tr:last-child th, .mx tbody tr:last-child td{ border-bottom:0; }
+  .mx .gatecol{ background:var(--amber50); }
+  .mx thead .gatecol{ color:var(--amber); }
+  .v{ display:inline-block; min-width:60px; font-size:11px; font-weight:700; padding:3px 8px; border-radius:7px; }
+  .v-yes{ background:var(--emerald50); color:var(--emerald); }
+  .v-no{ background:#eef0f3; color:var(--s500); }
+  .v-never{ background:var(--rose50); color:var(--rose); }
+  .v-na{ color:var(--s400); font-weight:600; }
+  .mxlead{ font-size:12px; color:var(--s700); line-height:1.6; margin:0 0 12px; }
+  .mxlead b{ color:var(--s900); }
+  .mxlead code{ background:#fbfbfd; border:1px solid var(--bd); padding:1px 5px; border-radius:5px; }
+  .mxfoot{ margin-top:14px; display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  .mxfoot .f{ border:1px solid var(--bd); border-radius:11px; background:#fbfbfd; padding:10px 12px; }
+  .mxfoot .f .ft{ font-size:11.5px; font-weight:700; color:var(--s900); margin-bottom:4px; }
+  .mxfoot .f .fd{ font-size:11px; color:var(--s700); line-height:1.55; }
+  .mxfoot .f .fd code{ background:#fff; border:1px solid var(--bd); padding:1px 4px; border-radius:4px; font-size:10.5px; }
+  .mxnote{ margin-top:12px; font-size:11.5px; color:var(--amber); background:var(--amber50); border:1px solid #f3e2c0; border-radius:10px; padding:9px 12px; line-height:1.6; }
+  .mxnote b{ color:#92400e; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="pg">
+    <h1>系統技術架構圖</h1>
+    <p>前置調解債權交換平台　·　版本 v0.5　·　概念驗證／聯合試辦（POC）</p>
+    <div class="stackline">
+      <span class="pill">React 18 + TypeScript</span><span class="pill">Vite 5</span><span class="pill">Tailwind 3</span><span class="pill">React Router 6</span><span class="pill">Zustand</span>
+      <span class="pill">Fastify 4</span><span class="pill">Prisma 5</span><span class="pill">Zod</span><span class="pill">PostgreSQL 16</span><span class="pill">Caddy 2</span><span class="pill">Docker Compose</span>
+    </div>
+  </header>
+
+  <div class="cols">
+    <!-- ===== TIER STACK ===== -->
+    <div class="stack">
+      <div class="rail"></div>
+      <div class="railcap top">請求 ▼</div>
+      <div class="railcap bot">回應 ▲</div>
+
+      <!-- Tier 1 -->
+      <div class="tier">
+        <div class="th"><span class="spine sp-brand"></span><span class="tname">用戶端（瀏覽器）</span>
+          <span class="chips"><span class="chip c-brand">React 18 SPA</span></span></div>
+        <ul>
+          <li><b>單頁應用</b>：React Router 6 路由、Zustand 狀態管理</li>
+          <li><b>apiFetch</b> 統一封裝，自動附帶 JWT（Authorization: Bearer）</li>
+          <li>Vite 5 建置為<b>靜態檔</b>；<code>VITE_API_BASE=""</code> → 同源 <code>/api</code></li>
+        </ul>
+      </div>
+      <div class="arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v16M6 14l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lab">HTTPS（TLS 1.2+）</span></div>
+
+      <!-- Tier 2 -->
+      <div class="tier">
+        <div class="th"><span class="spine sp-slate"></span><span class="tname">邊緣層 — 反向代理</span>
+          <span class="chips"><span class="chip c-slate">Caddy 2</span></span></div>
+        <ul>
+          <li><b>自動 HTTPS</b>：Let's Encrypt（HTTP-01），80 → 443 轉址</li>
+          <li>提供前端<b>靜態站台</b>，並把 <code>/api/*</code> <b>反向代理</b>至 api:4000</li>
+          <li>同源呼叫 → <b>無 CORS 問題</b>；憑證存於 caddy_data 卷</li>
+        </ul>
+      </div>
+      <div class="arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v16M6 14l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lab">同源 /api（HTTP，內網）</span></div>
+
+      <!-- Tier 3 -->
+      <div class="tier">
+        <div class="th"><span class="spine sp-emerald"></span><span class="tname">應用層 — API 服務</span>
+          <span class="chips"><span class="chip c-emerald">Fastify 4</span><span class="chip c-emerald">Node.js</span></span></div>
+        <ul>
+          <li><b>中介管線</b>：CORS 白名單 → JWT 驗證 → Rate-limit（100/min）→ Zod schema 驗證 → <b>RBAC 授權</b></li>
+          <li><b>10 路由模組</b>：auth · cases · caseFlow · dashboard · usersAdmin · notifications · audit-logs · passwordReset · banks · courts</li>
+          <li>密碼以 <b>bcrypt</b> 雜湊；啟用碼／重置碼一次性、有效期控管</li>
+          <li><b>案件查詢走 <code>POST /api/cases/query</code></b>：查詢字串置於 request body，<b>不進入 URL、不落存取日誌</b>；排序欄位白名單、單頁上限 100 筆</li>
+        </ul>
+        <div class="mini"><span class="m">JWT（HS256）</span><span class="m">Zod 驗證</span><span class="m">Rate-limit</span><span class="m">bcryptjs</span><span class="m">伺服器端 RBAC</span></div>
+      </div>
+      <div class="arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v16M6 14l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lab">Prisma Client（型別安全查詢）</span></div>
+
+      <!-- Tier 4 -->
+      <div class="tier">
+        <div class="th"><span class="spine sp-amber"></span><span class="tname">資料存取層 — ORM</span>
+          <span class="chips"><span class="chip c-amber">Prisma 5</span></span></div>
+        <ul>
+          <li><b>Migrations 六版、皆為增量非破壞性</b>：<code>v03_init</code> → <code>v035_table_change</code> → <code>v04a_item_rules</code> → <code>v04b_participant_guards</code> → <code>v04d_case_edit_fields</code> → <code>v04e_secured_claims_reserved</code></li>
+          <li><code>v04a</code> 建立「一債權種類一列」唯一索引前，<b>先合併既有重複列</b>（防禦式遷移，既有申報資料不遺失）</li>
+          <li>全棧映像啟動時自動 <b>migrate deploy ＋ seed</b>（冪等、防重）</li>
+        </ul>
+      </div>
+      <div class="arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v16M6 14l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lab">SQL（內網 5432）</span></div>
+
+      <!-- Tier 5 -->
+      <div class="tier">
+        <div class="th"><span class="spine sp-violet"></span><span class="tname">資料層 — 資料庫</span>
+          <span class="chips"><span class="chip c-violet">PostgreSQL 16</span></span></div>
+        <ul>
+          <li><b>金額精度</b> <code>Decimal(21,4)</code>；對外四欄 ＋ 🔒 對內本金／利息</li>
+          <li>業務唯一鍵 <b>(courtCode, docNumber)</b> ＋ cuid 代理主鍵</li>
+          <li><b>不儲存個資</b>（無債務人姓名／ID，以法院＋公文文號辨識）</li>
+          <li><b>13 個資料表</b>；<code>secured_credit_items</code>（有擔保債權）欄位已建置<b>保留待啟用</b>，個資處理方式確認後再開放</li>
+          <li>快照亦記錄該輪<b>被排除者</b>（移出／自行拒絕及其理由），使每一輪皆可完整還原</li>
+        </ul>
+        <div class="mini"><span class="m">Case</span><span class="m">CreditItem</span><span class="m">SecuredCreditItem</span><span class="m">CaseParticipantBank</span><span class="m">DeclarationSnapshot</span><span class="m">CaseDoubt</span><span class="m">Notification</span><span class="m">AuditLog</span><span class="m">User / Bank / Court</span></div>
+      </div>
+    </div>
+
+    <!-- ===== CROSS-CUTTING ===== -->
+    <div class="aside">
+      <div class="xhead">橫切關注點</div>
+
+      <div class="xcard">
+        <div class="xt"><span class="i c-brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3" stroke-linecap="round"/></svg></span>安全</div>
+        <ul>
+          <li><b>JWT</b> 無狀態驗證、<b>bcrypt</b> 密碼雜湊</li>
+          <li>Rate-limit、CORS 白名單、憑證自動更新</li>
+          <li>可執行動作與可見範圍<b>一律由後端把關</b></li>
+        </ul>
+      </div>
+
+      <div class="xcard">
+        <div class="xt"><span class="i c-violet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z" stroke-linejoin="round"/><circle cx="12" cy="12" r="2.5"/></svg></span>可視性治理（RBAC）</div>
+        <ul>
+          <li><b>平台全盲</b>：管理員只見狀態，金額欄一律回 null</li>
+          <li><b>稽核全見</b>：全案唯讀，含各行明細與對內債權</li>
+          <li><b>C-1 對內債權</b>：僅本行＋稽核可見，不與他行共享</li>
+          <li><b>封閉→揭露</b>：申報期各行只見自己，全員確認才揭露</li>
+        </ul>
+      </div>
+
+      <div class="xcard">
+        <div class="xt"><span class="i c-amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M8 4h8a2 2 0 0 1 2 2v14l-6-3-6 3V6a2 2 0 0 1 2-2z" stroke-linejoin="round"/></svg></span>稽核軌跡</div>
+        <ul>
+          <li><b>AuditLog</b> 記錄申報／確認／撤回／揭露／疑義／回報</li>
+          <li>每輪揭露留 <b>DeclarationSnapshot</b> 快照，可回溯</li>
+        </ul>
+      </div>
+
+      <div class="xcard">
+        <div class="xt"><span class="i c-emerald"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2" stroke-linecap="round"/></svg></span>終態鎖死</div>
+        <ul>
+          <li>結案（成立／不成立）為<b>終態</b>、兩段式防呆</li>
+          <li>不可更正、不得以同文號新建</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== STATE MACHINE ===== -->
+  <div class="band">
+    <h2><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0071e3" stroke-width="1.9"><circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="6" r="2.5"/><circle cx="19" cy="18" r="2.5"/><path d="M7.3 11l9.4-4M7.3 13l9.4 4" stroke-linecap="round"/></svg>案件狀態機</h2>
+    <div class="sm">
+      <span class="st draft">DRAFT 草稿</span>
+      <span class="sarrow">›<small>發布</small>›</span>
+      <span class="st conf">封閉申報中</span>
+      <span class="sarrow">›<small>全員確認→揭露</small>›</span>
+      <span class="st out">待回報</span>
+      <span class="sarrow">›<small>主辦線下回報</small>›</span>
+      <span class="st ok">成立</span>
+      <span class="sarrow">／</span>
+      <span class="st no">不成立</span>
+    </div>
+    <div class="loop"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#be123c" stroke-width="1.9"><path d="M4 9a8 8 0 0 1 14-3l2 2M20 15a8 8 0 0 1-14 3l-2-2" stroke-linecap="round" stroke-linejoin="round"/></svg>疑義迴圈：揭露後任一參與行可<b>標記疑義</b> → 全案退回封閉申報、<b>round + 1</b>、全員重新確認</div>
+    <div class="loop"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#b45309" stroke-width="1.9"><path d="M12 3l8 4v6c0 4.5-3.2 7.6-8 8.5-4.8-.9-8-4-8-8.5V7z" stroke-linejoin="round"/><path d="M9.5 12l1.8 1.8L15 10" stroke-linecap="round" stroke-linejoin="round"/></svg>組成變更防護：主辦<b>移出參與行</b>或該行<b>自行拒絕參與</b>時，即使剩餘各行恰已全數確認，系統<b>刻意不自動揭露</b>；須由主辦另行執行 <code>POST /:caseId/disclose</code> 二次確認，使「排除某行」與「定案」成為兩個各自留痕的決定。已揭露後發生組成變更則<b>一律退回重新確認</b>。</div>
+  </div>
+
+
+  <!-- ===== VISIBILITY MATRIX（第二段：資訊可視性） ===== -->
+  <div class="band">
+    <h2>資訊可視性閘門 — 同一支 <code>GET /api/cases/:caseId</code>，五種身分五種回應</h2>
+    <p class="mxlead">
+      可視性<b>不是由前端隱藏</b>，而是後端在組裝回應時逐欄位決定：不可見的欄位回傳 <code>null</code>，
+      他行的數字<b>從未離開伺服器</b>。整份案件只有一個「閘門」——<b>全員確認後的揭露</b>；在此之前與之後，是兩個不同的資訊世界。
+    </p>
+    <table class="mx">
+      <thead>
+        <tr>
+          <th style="text-align:left">觀看者</th>
+          <th>案件基本資料<small>法院／文號／庭期</small></th>
+          <th>本行自身明細</th>
+          <th class="gatecol">他行明細<small>揭露前</small></th>
+          <th class="gatecol">他行明細<small>揭露後</small></th>
+          <th>彙整總額<small>consolidatedTotal</small></th>
+          <th>對內債權（C-1）<small>他行的</small></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th>參與行本身<span>BANK_STAFF · 本案參與</span></th>
+          <td><span class="v v-yes">可見</span></td>
+          <td><span class="v v-yes">可見</span></td>
+          <td class="gatecol"><span class="v v-no">null</span></td>
+          <td class="gatecol"><span class="v v-yes">可見</span></td>
+          <td><span class="v v-yes">可見</span></td>
+          <td><span class="v v-never">永不可見</span></td>
+        </tr>
+        <tr>
+          <th>平台稽核<span>PLATFORM_AUDITOR</span></th>
+          <td><span class="v v-yes">可見</span></td>
+          <td><span class="v v-yes">可見</span></td>
+          <td class="gatecol"><span class="v v-yes">可見</span></td>
+          <td class="gatecol"><span class="v v-yes">可見</span></td>
+          <td><span class="v v-yes">可見</span></td>
+          <td><span class="v v-yes">可見</span></td>
+        </tr>
+        <tr>
+          <th>平台管理員<span>PLATFORM_ADMIN</span></th>
+          <td><span class="v v-yes">可見</span></td>
+          <td><span class="v v-never">永不可見</span></td>
+          <td class="gatecol"><span class="v v-never">永不可見</span></td>
+          <td class="gatecol"><span class="v v-never">永不可見</span></td>
+          <td><span class="v v-never">永不可見</span></td>
+          <td><span class="v v-never">永不可見</span></td>
+        </tr>
+        <tr>
+          <th>已被移出／自行退出之行<span>removedAt 已設定</span></th>
+          <td><span class="v v-na">403 無存取權</span></td>
+          <td><span class="v v-na">—</span></td>
+          <td class="gatecol"><span class="v v-na">—</span></td>
+          <td class="gatecol"><span class="v v-na">—</span></td>
+          <td><span class="v v-na">—</span></td>
+          <td><span class="v v-na">—</span></td>
+        </tr>
+        <tr>
+          <th>非本案之其他銀行<span>未受邀</span></th>
+          <td><span class="v v-na">403 無存取權</span></td>
+          <td><span class="v v-na">—</span></td>
+          <td class="gatecol"><span class="v v-na">—</span></td>
+          <td class="gatecol"><span class="v v-na">—</span></td>
+          <td><span class="v v-na">—</span></td>
+          <td><span class="v v-na">—</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="mxfoot">
+      <div class="f">
+        <div class="ft">平台全盲</div>
+        <div class="fd">平台管理員負責帳號、銀行與法院主檔的維運，<b>所有金額欄位一律回傳 <code>null</code></b>——不是介面不顯示，而是資料不出庫。</div>
+      </div>
+      <div class="f">
+        <div class="ft">稽核全見</div>
+        <div class="fd">平台稽核可讀取全部欄位以履行查核義務，<b>但為唯讀</b>：不得建案、不得填報、不得確認、不得回報結果。</div>
+      </div>
+      <div class="f">
+        <div class="ft">對內債權（C-1）</div>
+        <div class="fd"><code>internalPrincipal</code> / <code>internalInterest</code> 僅該行本身與稽核可見，<b>即使揭露後亦不對他行釋出</b>；不進入彙整表總額。</div>
+      </div>
+    </div>
+
+    <div class="mxnote">
+      <b>寫入面的對稱限制：</b>各行只能寫自己的明細——<code>PUT /:caseId/my-items</code> 的寫入對象由 JWT 內的 <code>bankCode</code> 反查取得，
+      <b>不接受前端指定參與者</b>，因此「代他行填報」在結構上不可能發生。已確認者須先撤回確認才能修改；已揭露者須經疑義退回才能修改。
+    </div>
+  </div>
+
+  <!-- ===== DEPLOYMENT ===== -->
+  <div class="deploy">
+    <h2><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7dd3fc" stroke-width="1.9"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><path d="M7 7h.01M7 17h.01" stroke-linecap="round"/></svg>部署拓撲</h2>
+    <div class="sub">Docker Compose（<code>docker-compose.fullstack.yml</code>，專案名 <code>-p dataexchange</code>）　·　單一 OCI 主機　·　四容器一鍵部署</div>
+    <div class="dgrid">
+      <div class="box"><div class="bn">caddy <span class="tag">caddy:2</span></div><div class="bd">反向代理 · 自動 HTTPS（Let's Encrypt）· 靜態站台 + /api 反代</div><div class="port">:80 · :443（對外）</div></div>
+      <div class="box"><div class="bn">web <span class="tag">build</span></div><div class="bd">前端靜態檔（Vite 建置產物），由 Caddy 提供</div><div class="port">內網</div></div>
+      <div class="box"><div class="bn">api <span class="tag">Fastify</span></div><div class="bd">./backend 映像 · 啟動自動 migrate deploy + seed</div><div class="port">:4000（內網）</div></div>
+      <div class="box"><div class="bn">db <span class="tag">postgres:16</span></div><div class="bd">資料庫 mediation · 資料存於 pgdata 具名卷 · 不對外開埠</div><div class="port">:5432（內網）</div></div>
+    </div>
+    <div class="dfoot">
+      <span class="df">DNS A → OCI 主機 IP</span>
+      <span class="df">網域：debit-ex-platform-staging.baasinnovation.com</span>
+      <span class="df">機密於 OCI .env（JWT_SECRET / DB_PASSWORD）</span>
+      <span class="df">卷：pgdata · caddy_data · caddy_config</span>
+    </div>
+  </div>
+
+  <div class="foot">前置調解債權交換平台　技術架構　v0.5　·　僅供技術說明</div>
+</div>
+</body>
+</html>

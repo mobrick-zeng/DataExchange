@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1320">
+<title>資訊流架構圖 — 案件生命週期 v0.5</title>
+<style>
+  :root{
+    --bg:#f5f5f7; --card:#fff; --bd:#e3e3e8; --ink:#1d1d1f; --s900:#0f172a; --s700:#334155; --s500:#64748b; --s400:#94a3b8; --s300:#cbd5e1;
+    --brand:#0071e3; --brand700:#005bbb; --brand50:#eff6ff; --brand100:#d6e6fb;
+    --violet:#6d28d9; --violet50:#f5f3ff; --violet100:#e5dcfb;
+    --amber:#b45309; --amber50:#fffbeb; --amber100:#f3e2c0;
+    --emerald:#047857; --emerald50:#ecfdf5; --emerald100:#c6ecd8;
+    --rose:#be123c; --rose50:#fff1f2; --rose100:#f4cdd5;
+    --rail:250px;
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+  code{ font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace; font-size:.92em; }
+  .wrap{ width:1280px; margin:0 auto; padding:28px 28px 40px; }
+
+  header.pg{ margin-bottom:18px; }
+  header.pg h1{ margin:0; font-size:24px; font-weight:700; letter-spacing:-.02em; color:var(--s900); }
+  header.pg p{ margin:6px 0 0; font-size:13px; color:var(--s500); }
+
+  /* ---- thesis ---- */
+  .thesis{ background:var(--s900); color:#fff; border-radius:16px; padding:18px 22px; margin:16px 0 20px; display:grid; grid-template-columns:1fr 1fr 1fr; gap:18px; }
+  .thesis .t1{ font-size:15px; font-weight:700; line-height:1.55; }
+  .thesis .t1 em{ font-style:normal; color:#7dd3fc; }
+  .thesis .tc{ border-left:1px solid #334155; padding-left:18px; }
+  .thesis .tc b{ display:block; font-size:12px; font-weight:700; color:#7dd3fc; margin-bottom:5px; letter-spacing:.03em; }
+  .thesis .tc span{ font-size:12px; color:#cbd5e1; line-height:1.6; display:block; }
+
+  /* ---- sequence grid ---- */
+  .seq{ position:relative; background:var(--card); border:1px solid var(--bd); border-radius:16px; box-shadow:0 2px 12px rgba(0,0,0,.06); padding:0 20px 18px; }
+  .lifelines{ position:absolute; top:64px; bottom:16px; left:20px; right:20px; pointer-events:none; }
+  .lifelines i{ position:absolute; top:0; bottom:0; width:0; border-left:1px dashed var(--s300); }
+  .lifelines i:nth-child(1){ left:calc((100% - var(--rail)) * .125); }
+  .lifelines i:nth-child(2){ left:calc((100% - var(--rail)) * .375); }
+  .lifelines i:nth-child(3){ left:calc((100% - var(--rail)) * .625); border-left:2px solid var(--brand100); }
+  .lifelines i:nth-child(4){ left:calc((100% - var(--rail)) * .875); border-left:2px solid var(--emerald100); }
+
+  .row{ display:grid; grid-template-columns:repeat(4,1fr) var(--rail); align-items:center; position:relative; }
+
+  /* lane headers */
+  .heads{ position:sticky; top:0; background:var(--card); z-index:5; padding:16px 0 12px; border-bottom:1px solid var(--bd); }
+  .lh{ text-align:center; }
+  .lh .box{ display:inline-flex; flex-direction:column; align-items:center; gap:3px; padding:9px 14px; border-radius:12px; border:1px solid var(--bd); background:#fff; min-width:150px; }
+  .lh .nm{ font-size:13px; font-weight:700; color:var(--s900); }
+  .lh .sub{ font-size:10.5px; color:var(--s500); }
+  .lh.a .box{ background:var(--brand50); border-color:var(--brand100); } .lh.a .nm{ color:var(--brand700); }
+  .lh.b .box{ background:var(--violet50); border-color:var(--violet100); } .lh.b .nm{ color:var(--violet); }
+  .lh.p .box{ background:#eef0f3; border-color:#dfe3e8; } .lh.p .nm{ color:var(--s700); }
+  .lh.d .box{ background:var(--emerald50); border-color:var(--emerald100); } .lh.d .nm{ color:var(--emerald); }
+  .lh.r{ font-size:11px; font-weight:700; color:var(--s400); letter-spacing:.06em; text-align:left; padding-left:18px; }
+
+  /* no-link marker between the two bank lanes */
+  .nolink{ padding:12px 0 4px; }
+  .nolink .inner{ grid-column:1/3; position:relative; height:34px; }
+  .nolink .bar{ position:absolute; top:17px; left:25%; right:25%; height:0; border-top:2px dashed var(--rose100); }
+  .nolink .x{ position:absolute; top:2px; left:50%; transform:translateX(-50%); background:var(--rose50); border:1px solid var(--rose100); color:var(--rose); font-size:11px; font-weight:700; padding:4px 12px; border-radius:9999px; }
+
+  /* phase band */
+  .phase{ margin:16px 0 6px; display:flex; align-items:center; gap:10px; }
+  .phase .pn{ font-size:11px; font-weight:800; color:#fff; background:var(--s700); padding:3px 9px; border-radius:7px; letter-spacing:.04em; }
+  .phase .pt{ font-size:13px; font-weight:700; color:var(--s900); }
+  .phase .pl{ flex:1; height:1px; background:var(--bd); }
+
+  /* step */
+  .step{ padding:7px 0; }
+  .step + .step{ border-top:1px dotted #eceef1; }
+  .step.gate{ background:linear-gradient(90deg,#fffdf5,rgba(255,255,255,0)); border-radius:10px; }
+  .arrows{ grid-column:1/5; grid-row:1; position:relative; pointer-events:none; }
+  .a{ position:relative; height:38px; }
+  .a .lbl{ position:absolute; left:var(--l); right:var(--r); top:0; text-align:center; }
+  .a .lbl b{ display:inline-block; font-size:11.5px; font-weight:700; padding:3px 10px; border-radius:8px; border:1px solid var(--bd); background:#fff; color:var(--s900); }
+  .a .lbl b code{ font-weight:600; }
+  .a .lbl s{ display:block; text-decoration:none; font-size:10.5px; color:var(--s500); margin-top:2px; }
+  .a .bar{ position:absolute; left:var(--l); right:var(--r); top:29px; height:0; border-top:2px solid var(--s400); }
+  .a .bar::after{ content:""; position:absolute; right:-2px; top:-5px; border-left:9px solid var(--s400); border-top:5px solid transparent; border-bottom:5px solid transparent; }
+  .a.rev .bar::after{ right:auto; left:-2px; border-left:0; border-right:9px solid var(--s400); }
+  .a.from-a .bar, .a.from-a .bar::after{ border-top-color:var(--brand); border-left-color:var(--brand); border-right-color:var(--brand); }
+  .a.from-a .lbl b{ border-color:var(--brand100); background:var(--brand50); color:var(--brand700); }
+  .a.from-b .bar, .a.from-b .bar::after{ border-top-color:var(--violet); border-left-color:var(--violet); border-right-color:var(--violet); }
+  .a.from-b .lbl b{ border-color:var(--violet100); background:var(--violet50); color:var(--violet); }
+  .a.dashed .bar{ border-top-style:dashed; }
+  /* lane geometry: centers at 12.5 / 37.5 / 62.5 / 87.5 % of the 4-lane area */
+  .a13{ --l:12.5%; --r:37.5%; }
+  .a23{ --l:37.5%; --r:37.5%; }
+  .a12{ --l:12.5%; --r:62.5%; }
+  .a34{ --l:62.5%; --r:12.5%; }
+
+  /* internal (self) box on the API lane */
+  .selfbox{ grid-column:3; grid-row:1; z-index:2; }
+  .selfbox .sb{ background:var(--amber50); border:1px solid var(--amber100); border-radius:11px; padding:8px 11px; }
+  .selfbox .sb .t{ font-size:11.5px; font-weight:800; color:var(--amber); display:flex; align-items:center; gap:5px; }
+  .selfbox .sb .d{ font-size:10.5px; color:var(--s700); line-height:1.5; margin-top:4px; }
+
+  /* db effects */
+  .db{ grid-column:4; grid-row:1; z-index:2; padding-left:8px; }
+  .db .card{ background:var(--emerald50); border:1px solid var(--emerald100); border-radius:11px; padding:8px 11px; }
+  .db .card .e{ font-size:11px; color:#065f46; line-height:1.55; padding-left:13px; position:relative; }
+  .db .card .e + .e{ margin-top:4px; }
+  .db .card .e::before{ content:""; position:absolute; left:2px; top:6px; width:4px; height:4px; border-radius:1px; background:var(--emerald); }
+  .db .card .e b{ font-weight:700; color:var(--emerald); }
+  .db .none{ font-size:10.5px; color:var(--s400); padding-left:4px; }
+
+  /* rail */
+  .rl{ grid-column:5; grid-row:1; padding-left:18px; z-index:2; }
+  .rl .n{ font-size:11px; color:var(--s700); line-height:1.55; padding-left:15px; position:relative; }
+  .rl .n + .n{ margin-top:5px; }
+  .rl .n::before{ content:""; position:absolute; left:1px; top:6px; width:5px; height:5px; border-radius:2px; background:var(--s400); }
+  .rl .n b{ color:var(--s900); font-weight:700; }
+  .rl .n.bell::before{ background:var(--brand); }
+  .rl .n.warn{ color:var(--rose); } .rl .n.warn::before{ background:var(--rose); } .rl .n.warn b{ color:var(--rose); }
+  .rl .n.gatetx{ color:var(--amber); } .rl .n.gatetx::before{ background:#f59e0b; } .rl .n.gatetx b{ color:var(--amber); }
+  .stnow{ display:inline-flex; align-items:center; gap:5px; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:7px; margin-bottom:5px; }
+  .st-draft{ background:#eef0f3; color:var(--s700); }
+  .st-conf{ background:var(--brand50); color:var(--brand700); }
+  .st-out{ background:var(--amber50); color:var(--amber); }
+  .st-ok{ background:var(--emerald50); color:var(--emerald); }
+
+  .num{ position:absolute; left:-4px; top:50%; transform:translateY(-50%); font-size:10px; font-weight:800; color:var(--s400); width:18px; text-align:right; }
+
+  /* guard note */
+  .guard{ grid-column:1/5; grid-row:2; text-align:center; margin-top:-4px; }
+  .guard span{ font-size:10.5px; font-weight:600; color:var(--rose); background:var(--rose50); border:1px solid var(--rose100); padding:2px 9px; border-radius:7px; }
+
+  /* branch */
+  .branch{ margin:8px 0 2px; background:#fbfbfd; border:1px dashed var(--s300); border-radius:12px; padding:10px 14px; }
+  .branch .bt{ font-size:11.5px; font-weight:800; color:var(--s700); margin-bottom:5px; display:flex; align-items:center; gap:6px; }
+  .branch .bt em{ font-style:normal; font-size:10px; font-weight:700; color:#fff; background:var(--s400); padding:2px 7px; border-radius:6px; }
+  .branch .bd{ font-size:11.5px; color:var(--s700); line-height:1.6; }
+  .branch .bd b{ color:var(--s900); }
+  .branch .bd code{ background:#fff; border:1px solid var(--bd); padding:1px 5px; border-radius:5px; }
+
+  /* bottom bands */
+  .band{ margin-top:20px; background:var(--card); border:1px solid var(--bd); border-radius:16px; box-shadow:0 2px 12px rgba(0,0,0,.06); padding:18px 20px; }
+  .band h2{ margin:0 0 4px; font-size:14px; font-weight:700; color:var(--s900); }
+  .band .sub{ font-size:11.5px; color:var(--s500); margin-bottom:14px; }
+  .g3{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+  .u{ border:1px solid var(--bd); border-radius:12px; padding:12px 14px; background:#fbfbfd; }
+  .u .ut{ font-size:12.5px; font-weight:700; color:var(--s900); margin-bottom:6px; display:flex; align-items:center; gap:7px; }
+  .u .ut .dot{ width:8px; height:8px; border-radius:3px; flex-shrink:0; }
+  .u p{ margin:0; font-size:11.5px; color:var(--s700); line-height:1.6; }
+  .u p + p{ margin-top:5px; }
+  .u code{ background:#fff; border:1px solid var(--bd); padding:1px 5px; border-radius:5px; }
+  .foot{ margin-top:18px; font-size:11px; color:var(--s400); text-align:center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="pg">
+    <h1>資訊流架構圖 — 案件生命週期</h1>
+    <p>前置調解債權交換平台　·　版本 v0.5　·　一件案子從建立到結案，資訊在前後端之間如何流動</p>
+  </header>
+
+  <div class="thesis">
+    <div class="t1">銀行與銀行之間<em>沒有任何直接連線</em>。<br>所謂「案件在系統間傳遞」，實際上是各行前端各自呼叫<em>同一個後端 API</em>，讀寫<em>同一個資料庫</em>。</div>
+    <div class="tc"><b>PULL，不是 PUSH</b><span>平台不對銀行端送件，沒有 webhook、不需要銀行端開放任何 inbound。所有「通知」只是資料庫寫一列，對方前端每 30 秒輪詢才拉到。</span></div>
+    <div class="tc"><b>過濾在後端發生</b><span>他行的數字從未離開伺服器。同一支 <code>GET /api/cases/:caseId</code>，五種身分拿到五種內容——不是前端隱藏。</span></div>
+  </div>
+
+  <div class="seq">
+    <div class="lifelines"><i></i><i></i><i></i><i></i></div>
+
+    <!-- lane headers -->
+    <div class="row heads">
+      <div class="lh a"><div class="box"><span class="nm">A 行（主辦）</span><span class="sub">瀏覽器 · React SPA</span></div></div>
+      <div class="lh b"><div class="box"><span class="nm">B 行（參與行）</span><span class="sub">瀏覽器 · React SPA</span></div></div>
+      <div class="lh p"><div class="box"><span class="nm">後端 API</span><span class="sub">Caddy → Fastify · RBAC</span></div></div>
+      <div class="lh d"><div class="box"><span class="nm">PostgreSQL</span><span class="sub">唯一真相來源</span></div></div>
+      <div class="lh r">通知與可視性</div>
+    </div>
+
+    <!-- no direct link -->
+    <div class="row nolink">
+      <div class="inner">
+        <div class="bar"></div>
+        <div class="x">兩行之間無直接連線 · 無檔案交換 · 無點對點通道</div>
+      </div>
+    </div>
+
+    <!-- ===== PHASE 0 ===== -->
+    <div class="phase"><span class="pn">0</span><span class="pt">身分建立</span><span class="pl"></span></div>
+
+    <div class="row step">
+      <div class="arrows">
+        <div class="a from-a a13"><div class="lbl"><b>POST <code>/api/auth/login</code></b><s>帳號 + 密碼</s></div><div class="bar"></div></div>
+      </div>
+      <div class="db"><div class="card"><div class="e">比對 <b>bcrypt</b> 雜湊</div></div></div>
+      <div class="rl">
+        <div class="n"><b>JWT（HS256）</b>簽發後，之後每一次請求，後端都從 JWT 取出 <code>{userId, bankCode, role}</code></div>
+        <div class="n warn"><b>前端傳來的身分一律不採信</b></div>
+      </div>
+    </div>
+
+    <!-- ===== PHASE 1 ===== -->
+    <div class="phase"><span class="pn">1</span><span class="pt">建案與邀請（主辦單方作業）</span><span class="pl"></span></div>
+
+    <div class="row step">
+      <div class="arrows">
+        <div class="a from-a a13"><div class="lbl"><b>POST <code>/api/cases</code></b><s>法院 + 公文文號 + 庭期資訊</s></div><div class="bar"></div></div>
+      </div>
+      <div class="db"><div class="card">
+        <div class="e">建 <b>Case</b>（狀態 DRAFT）</div>
+        <div class="e">主辦<b>自動建為參與行</b>（角色 MAIN）</div>
+      </div></div>
+      <div class="rl">
+        <span class="stnow st-draft">DRAFT 草稿</span>
+        <div class="n">唯一鍵 <code>(courtCode, docNumber)</code> 擋重複建案</div>
+        <div class="n"><b>不儲存個資</b>：以法院＋文號識別，無債務人姓名／身分證號</div>
+      </div>
+    </div>
+
+    <div class="row step">
+      <div class="arrows">
+        <div class="a from-a a13"><div class="lbl"><b>POST <code>/:caseId/participants</code></b><s>指定受邀銀行 B</s></div><div class="bar"></div></div>
+      </div>
+      <div class="db"><div class="card">
+        <div class="e">建 B 為 <b>CO_BANK</b>（PENDING）</div>
+        <div class="e">寫入 <b>Notification</b> 一列</div>
+      </div></div>
+      <div class="rl">
+        <div class="n bell">B 的鈴鐺出現「您受邀參與案件」</div>
+        <div class="n"><b>邀請即可見</b>：B 自此可讀取案件基本資料（文號、法院、庭期），但看不到任何金額</div>
+      </div>
+    </div>
+
+    <div class="row step">
+      <div class="arrows">
+        <div class="a from-a a13"><div class="lbl"><b>POST <code>/:caseId/publish</code></b><s>發布，開放封閉申報</s></div><div class="bar"></div></div>
+      </div>
+      <div class="guard"><span>前置檢查：至少已邀請一家其他債權行，否則 400 退回</span></div>
+      <div class="db"><div class="card">
+        <div class="e">Case.status → <b>PENDING_CONFIRMATION</b></div>
+        <div class="e">逐一寫入通知</div>
+      </div></div>
+      <div class="rl">
+        <span class="stnow st-conf">PENDING_CONFIRMATION 封閉申報</span>
+        <div class="n bell">各參與行收到「請填報並確認您的債權」</div>
+      </div>
+    </div>
+
+    <!-- ===== PHASE 2 ===== -->
+    <div class="phase"><span class="pn">2</span><span class="pt">封閉申報 — 各行自填、互不可見</span><span class="pl"></span></div>
+
+    <div class="row step">
+      <div class="arrows">
+        <div class="a from-b a23"><div class="lbl"><b>PUT <code>/:caseId/my-items</code></b><s>B 行填報自己的債權明細</s></div><div class="bar"></div></div>
+        <div class="a from-a a13"><div class="lbl"><b>PUT <code>/:caseId/my-items</code></b><s>主辦也必須自填，非代填</s></div><div class="bar"></div></div>
+      </div>
+      <div class="db"><div class="card">
+        <div class="e">該行 <b>CreditItem</b> 整批取代</div>
+        <div class="e">一債權種類<b>僅一列</b></div>
+      </div></div>
+      <div class="rl">
+        <div class="n warn"><b>結構上不可能代他行填</b>：寫入對象由 JWT 的 bankCode 反查，不接受前端指定 participantId</div>
+        <div class="n">此階段不發通知——他行本來就看不到內容</div>
+      </div>
+    </div>
+
+    <div class="row step">
+      <div class="arrows">
+        <div class="a from-b a23"><div class="lbl"><b>POST <code>/:caseId/confirm</code></b><s>B 行確認本行債權</s></div><div class="bar"></div></div>
+      </div>
+      <div class="guard"><span>前置檢查：尚未填報任何明細者不得確認，避免以 0 元誤確認</span></div>
+      <div class="db"><div class="card">
+        <div class="e">confirmationStatus → <b>CONFIRMED</b></div>
+        <div class="e"><b>凍結</b> confirmedClaimAmount</div>
+      </div></div>
+      <div class="rl">
+        <div class="n bell">主辦收到「B 已確認」——<b>只知道確認了，不知道金額</b></div>
+        <div class="n warn">A 此時仍讀不到 B 的任何數字（回應為 null）</div>
+      </div>
+    </div>
+
+    <!-- ===== PHASE 3 ===== -->
+    <div class="phase"><span class="pn">3</span><span class="pt">揭露閘門 — 整條流程唯一的資訊釋放點</span><span class="pl"></span></div>
+
+    <div class="row step gate">
+      <div class="arrows">
+        <div class="a from-a a13"><div class="lbl"><b>POST <code>/:caseId/confirm</code></b><s>最後一家確認（本例為主辦）</s></div><div class="bar"></div></div>
+      </div>
+      <div class="selfbox"><div class="sb">
+        <div class="t">⚡ maybeDisclose()</div>
+        <div class="d">全員皆已確認 → <b>同一個請求內同步觸發</b>，無排程器、無訊息佇列</div>
+      </div></div>
+      <div class="db"><div class="card">
+        <div class="e"><b>凍結</b> consolidatedTotal（彙整總額）</div>
+        <div class="e">為每一家寫 <b>DeclarationSnapshot</b>，含該輪被排除者</div>
+        <div class="e">status → <b>PENDING_OUTCOME</b></div>
+      </div></div>
+      <div class="rl">
+        <span class="stnow st-out">PENDING_OUTCOME 已揭露</span>
+        <div class="n gatetx"><b>閘門開啟</b>：自此各參與行才讀得到他行明細與彙整表</div>
+        <div class="n gatetx"><b>但對內債權（C-1）永不開放</b>，揭露後他行仍拿不到</div>
+        <div class="n bell">全員收到「已揭露，可檢視彙整表」</div>
+      </div>
+    </div>
+
+    <div class="branch">
+      <div class="bt"><em>例外</em>組成變更後湊成全員確認時，不自動揭露</div>
+      <div class="bd">若主辦以 <code>POST /:caseId/participants/:bankCode/remove</code> <b>移出</b>某行、或某行<b>自行拒絕參與</b>而使剩餘各行恰好全數確認，系統<b>刻意不自動揭露</b>；回應改為 <code>readyToDisclose: true</code>，須由主辦另行執行 <code>POST /:caseId/disclose</code> 並二次確認。<b>目的：讓「排除某一行」與「定案」成為兩個分開、各自留痕的決定。</b></div>
+    </div>
+
+    <!-- ===== PHASE 4 ===== -->
+    <div class="phase"><span class="pn">4</span><span class="pt">疑義迴圈（可重複多輪）</span><span class="pl"></span></div>
+
+    <div class="row step">
+      <div class="arrows">
+        <div class="a from-b a23"><div class="lbl"><b>POST <code>/:caseId/doubt</code></b><s>任一參與行標記疑義＋理由</s></div><div class="bar"></div></div>
+      </div>
+      <div class="db"><div class="card">
+        <div class="e">建 <b>CaseDoubt</b>（記錄該輪、提出行）</div>
+        <div class="e">Case.round <b>+1</b>；清空彙整總額</div>
+        <div class="e">全員 confirmationStatus 重置</div>
+        <div class="e">status → <b>PENDING_CONFIRMATION</b></div>
+      </div></div>
+      <div class="rl">
+        <span class="stnow st-conf">退回封閉申報</span>
+        <div class="n"><b>各行明細保留</b>，僅需修改後重新確認</div>
+        <div class="n">上一輪快照<b>不刪除</b>——每一輪都有完整存證，可還原「當時誰在、誰不在、各報多少」</div>
+      </div>
+    </div>
+
+    <!-- ===== PHASE 5 ===== -->
+    <div class="phase"><span class="pn">5</span><span class="pt">結案</span><span class="pl"></span></div>
+
+    <div class="row step">
+      <div class="arrows">
+        <div class="a from-a a13"><div class="lbl"><b>POST <code>/:caseId/report</code></b><s>主辦回報成立／不成立（須 confirm=true）</s></div><div class="bar"></div></div>
+      </div>
+      <div class="guard"><span>回報「成立」須已揭露；回報「不成立」須填理由，可於封閉申報僵局時提出</span></div>
+      <div class="db"><div class="card">
+        <div class="e">status → <b>ESTABLISHED</b> / <b>NOT_ESTABLISHED</b></div>
+        <div class="e">記錄回報人與時間</div>
+      </div></div>
+      <div class="rl">
+        <span class="stnow st-ok">終態 · 鎖死</span>
+        <div class="n bell">全員收到結果通知</div>
+        <div class="n">系統為<b>存證</b>，非裁定；終態後任何異動一律拒絕</div>
+      </div>
+    </div>
+
+    <!-- ===== notification pull ===== -->
+    <div class="phase"><span class="pn">✦</span><span class="pt">貫穿全程：通知是「拉」的</span><span class="pl"></span></div>
+
+    <div class="row step">
+      <div class="arrows">
+        <div class="a from-b a23 dashed"><div class="lbl"><b>GET <code>/api/notifications</code></b><s>前端每 30 秒輪詢一次</s></div><div class="bar"></div></div>
+        <div class="a from-a a13 dashed"><div class="lbl"><b>GET <code>/api/notifications</code></b><s>同上</s></div><div class="bar"></div></div>
+      </div>
+      <div class="db"><div class="card"><div class="e">讀取該<b>使用者本人</b>的 Notification</div></div></div>
+      <div class="rl">
+        <div class="n">上述每一個「通知」步驟，實際上只是<b>在資料庫寫一列</b>；直到對方瀏覽器來拉，資訊才真正抵達</div>
+        <div class="n">點鈴鐺可直接跳轉該案件</div>
+      </div>
+    </div>
+
+  </div><!-- /seq -->
+
+  <!-- ===== bottom: why it matters ===== -->
+  <div class="band">
+    <h2>三個由這張圖直接得出的結論</h2>
+    <div class="sub">供資安、法遵與架構審查引用</div>
+    <div class="g3">
+      <div class="u">
+        <div class="ut"><span class="dot" style="background:var(--brand)"></span>銀行端不需開放任何 inbound</div>
+        <p>平台從不主動連線至銀行。所有互動都由銀行端<b>發起 outbound HTTPS</b>，經 Caddy（TLS 1.2+）進入 API。</p>
+        <p>因此不需要在銀行防火牆開孔、不需要固定 IP 白名單接收端、也沒有 webhook 重送與簽章驗證的問題。</p>
+      </div>
+      <div class="u">
+        <div class="ut"><span class="dot" style="background:var(--amber)"></span>沒有非同步元件，狀態機就是全部的協調機制</div>
+        <p>無訊息佇列、無排程器、無背景工作。<b>每一次狀態轉換都由某一次 API 呼叫同步完成</b>，成功即已落庫。</p>
+        <p>代價是沒有重試機制；好處是<b>不存在「訊息卡在佇列」的中間態</b>，任一時刻資料庫的狀態就是事實。</p>
+      </div>
+      <div class="u">
+        <div class="ut"><span class="dot" style="background:var(--emerald)"></span>每一個寫入都同步留痕</div>
+        <p>圖中每一個箭頭在成功後都會同步寫入 <b>AuditLog</b>（動作、執行人、所屬行、目標案件、時間、來源 IP）。</p>
+        <p>稽核軌與主流程在<b>同一個請求內</b>完成，不是事後補寫，因此不會出現「有動作但沒紀錄」。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">前置調解債權交換平台　資訊流架構　v0.5　·　僅供技術說明</div>
+</div>
+</body>
+</html>
