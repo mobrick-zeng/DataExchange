@@ -25,6 +25,11 @@ async function casesByStatus(where: object): Promise<Record<string, number>> {
   return out
 }
 
+/** 純日期以 YYYY-MM-DD 輸出（序列化契約，與 cases.ts 的 dateOut 一致）。
+ *  原樣輸出 DateTime 會變成 UTC 午夜時間戳，在 UTC 以西的時區會被解讀成前一天。 */
+const dateOut = (d: Date | null | undefined): string | null =>
+  d == null ? null : d.toISOString().slice(0, 10)
+
 /** 今日 00:00（伺服器時區）；期限倒數以「天」為單位，故一律歸零到日界 */
 function startOfToday(): Date {
   const d = new Date()
@@ -151,9 +156,12 @@ export async function dashboardRoutes(app: FastifyInstance) {
       })
       const docMap = await docNumbersOf(notes.map((n) => n.relatedCaseId))
 
-      summary.actionQueue = queue.slice(0, QUEUE_PREVIEW)
+      // 輸出時才轉字串：排序邏輯仍以 Date 比較，見上方 queue.sort
+      summary.actionQueue = queue.slice(0, QUEUE_PREVIEW).map((q) => ({
+        ...q, mediationDate: dateOut(q.mediationDate),
+      }))
       summary.actionQueueTotal = queue.length
-      summary.deadlines = deadlines.slice(0, 5)
+      summary.deadlines = deadlines.slice(0, 5).map((d) => ({ ...d, date: dateOut(d.date) }))
       summary.deadlineWindowDays = DEADLINE_WINDOW_DAYS
       summary.asMain = { selfPending, byStatus: mainByStatus }
       summary.asCoBank = { toConfirm, byStatus: coBankByStatus }

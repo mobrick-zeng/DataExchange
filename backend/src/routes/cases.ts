@@ -98,6 +98,18 @@ const num = (v: Prisma.Decimal | null | undefined) => (v == null ? 0 : Number(v)
 const itemExternalTotal = (it: { principal: any; interest: any; penalty: any; otherFee: any }) =>
   num(it.principal) + num(it.interest) + num(it.penalty) + num(it.otherFee)
 
+// ---- 序列化契約（見交付包 docs/serialization.md）----
+// 金額一律以「字串」輸出，絕不輸出 JSON 數字。儲存欄位由 Prisma 的 Decimal 天然
+// 輸出字串；但「計算出來的」合計欄位若直接回傳，會變成 JS 浮點數——同一個概念的
+// 金額因而有兩種 JSON 型別，且把 Decimal 的精度保證丟回浮點數。
+// 小數位數不保證（'100000' 與 '100000.0000' 皆合法）；客戶端須以十進位解析，
+// 不得對金額做字串比對。
+const moneyOut = (n: number): string => String(n)
+// 純日期概念（收文日／庭期／利息截止日／通報日）以 YYYY-MM-DD 輸出。
+// 若原樣輸出 DateTime，會變成 UTC 午夜的時間戳，在 UTC 以西的時區會被解讀成前一天。
+const dateOut = (d: Date | null | undefined): string | null =>
+  d == null ? null : d.toISOString().slice(0, 10)
+
 // 已揭露（已產出彙整表）：待回報或已結案
 const DISCLOSED: string[] = ['PENDING_OUTCOME', 'ESTABLISHED', 'NOT_ESTABLISHED']
 const isDisclosed = (status: string) => DISCLOSED.includes(status)
@@ -149,8 +161,8 @@ function mapCaseRow(
     mainBankCode: c.mainBankCode,
     mainBankName: c.mainBank.bankName,
     status: c.status,
-    receiptDate: c.receiptDate,
-    mediationDate: c.mediationDate,
+    receiptDate: dateOut(c.receiptDate),
+    mediationDate: dateOut(c.mediationDate),
     updatedAt: c.updatedAt,
     // 平台管理員不見金額
     consolidatedTotal: role === 'ADMIN' ? null : c.consolidatedTotal,
@@ -425,7 +437,7 @@ export async function caseRoutes(app: FastifyInstance) {
         removalReason: p.removalReason,
         // 數字：平台管理員永遠 null
         confirmedClaimAmount: canSeeAmounts ? p.confirmedClaimAmount : null,
-        liveTotal: canSeeThis ? liveTotal : null,
+        liveTotal: canSeeThis ? moneyOut(liveTotal) : null,
         canSeeInternal,
         items: canSeeThis
           ? p.items.map((it) => ({
@@ -436,13 +448,13 @@ export async function caseRoutes(app: FastifyInstance) {
               interest: it.interest,
               penalty: it.penalty,
               otherFee: it.otherFee,
-              externalTotal: itemExternalTotal(it),
+              externalTotal: moneyOut(itemExternalTotal(it)),
               // 對內：僅本行/稽核可見（他行即使揭露後也拿不到）
               ...(canSeeInternal
                 ? {
                     internalPrincipal: it.internalPrincipal,
                     internalInterest: it.internalInterest,
-                    internalTotal: num(it.internalPrincipal) + num(it.internalInterest),
+                    internalTotal: moneyOut(num(it.internalPrincipal) + num(it.internalInterest)),
                   }
                 : {}),
               note: it.note,
@@ -461,12 +473,12 @@ export async function caseRoutes(app: FastifyInstance) {
         mainBankName: c.mainBank.bankName,
         status: c.status,
         round: c.round,
-        receiptDate: c.receiptDate,
-        mediationDate: c.mediationDate,
+        receiptDate: dateOut(c.receiptDate),
+        mediationDate: dateOut(c.mediationDate),
         mediationTime: c.mediationTime,
         mediationPlace: c.mediationPlace,
-        interestCutoffDate: c.interestCutoffDate,
-        notifiedDate: c.notifiedDate,
+        interestCutoffDate: dateOut(c.interestCutoffDate),
+        notifiedDate: dateOut(c.notifiedDate),
         disclosedAt: c.disclosedAt,
         consolidatedTotal: rel.isAdmin ? null : c.consolidatedTotal,
         outcomeReportedAt: c.outcomeReportedAt,
