@@ -27,7 +27,7 @@ export async function authRoutes(app: FastifyInstance) {
   })
 
   // POST /api/auth/login — 銀行 + Email + 密碼（或待啟用帳號的啟用碼）
-  app.post('/login', { config: { rateLimit: { max: 10, timeWindow: '5 minutes' } } }, async (req, reply) => {
+  app.post('/login', { config: { rateLimit: { max: config.authRateLimitMax, timeWindow: '5 minutes' } } }, async (req, reply) => {
     const parsed = loginSchema.safeParse(req.body)
     if (!parsed.success) return reply.code(400).send({ message: '輸入格式不正確' })
     const { bankCode, email, password } = parsed.data
@@ -75,7 +75,7 @@ export async function authRoutes(app: FastifyInstance) {
   })
 
   // POST /api/auth/activate — 以啟用碼設定新密碼並勾選同意，完成啟用（自動登入）
-  app.post('/activate', { config: { rateLimit: { max: 20, timeWindow: '10 minutes' } } }, async (req, reply) => {
+  app.post('/activate', { config: { rateLimit: { max: config.authRateLimitMax * 2, timeWindow: '10 minutes' } } }, async (req, reply) => {
     const parsed = z
       .object({
         bankCode: z.string().min(1),

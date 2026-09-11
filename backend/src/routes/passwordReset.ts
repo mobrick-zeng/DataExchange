@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
+import { config } from '../config.js'
 import { prisma } from '../prisma.js'
 import { requireRole } from '../auth/guard.js'
 import { writeAudit } from '../lib/audit.js'
@@ -8,7 +9,7 @@ import { mintAccessCode, verifyAccessCode, markAccessCodeUsed } from '../lib/acc
 
 export async function passwordResetRoutes(app: FastifyInstance) {
   // POST /api/auth/request-password-reset — 使用者申請（公開；一律通用回應避免洩漏帳號）
-  app.post('/auth/request-password-reset', { config: { rateLimit: { max: 5, timeWindow: '10 minutes' } } }, async (req: FastifyRequest<{ Body: { bankCode: string; email: string } }>, reply) => {
+  app.post('/auth/request-password-reset', { config: { rateLimit: { max: config.authRateLimitMax, timeWindow: '10 minutes' } } }, async (req: FastifyRequest<{ Body: { bankCode: string; email: string } }>, reply) => {
     const parsed = z.object({ bankCode: z.string().min(1), email: z.string().email() }).safeParse(req.body)
     if (!parsed.success) return reply.code(400).send({ message: '請輸入銀行與 Email' })
     const { bankCode, email } = parsed.data
@@ -22,7 +23,7 @@ export async function passwordResetRoutes(app: FastifyInstance) {
   })
 
   // POST /api/auth/reset-password — 憑重置碼設定新密碼（公開）
-  app.post('/auth/reset-password', { config: { rateLimit: { max: 20, timeWindow: '10 minutes' } } }, async (req: FastifyRequest<{ Body: { bankCode: string; email: string; code: string; password: string } }>, reply) => {
+  app.post('/auth/reset-password', { config: { rateLimit: { max: config.authRateLimitMax * 2, timeWindow: '10 minutes' } } }, async (req: FastifyRequest<{ Body: { bankCode: string; email: string; code: string; password: string } }>, reply) => {
     const parsed = z.object({ bankCode: z.string().min(1), email: z.string().email(), code: z.string().min(1), password: z.string().min(8, '密碼至少 8 碼') }).safeParse(req.body)
     if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message ?? '輸入格式不正確' })
     const { bankCode, email, code, password } = parsed.data

@@ -22,8 +22,10 @@ const app = Fastify({ logger: true })
 async function bootstrap() {
   await app.register(cors, { origin: config.corsOrigins, credentials: true })
   await app.register(jwt, { secret: config.jwtSecret })
-  // 全域流量限制（各敏感端點另有更嚴格上限）；超過回 429
-  await app.register(rateLimit, { global: true, max: 100, timeWindow: '1 minute' })
+  // 全域流量限制（各敏感端點另有更嚴格上限）；超過回 429。
+  // 上限可由 RATE_LIMIT_MAX 覆寫——預設 100 不變，僅供一致性測試等自動化情境調高
+  // （該套測試每個案例都要建立一整組案件，很容易觸頂）。正式環境請勿調高。
+  await app.register(rateLimit, { global: true, max: config.rateLimitMax, timeWindow: '1 minute' })
 
   // 註冊 JWT 驗證裝飾器
   app.decorate('authenticate', authenticate)
